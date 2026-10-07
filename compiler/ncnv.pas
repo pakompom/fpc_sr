@@ -312,6 +312,7 @@ interface
     procedure inserttypeconv(var p:tnode;def:tdef);
     procedure inserttypeconv_explicit(var p:tnode;def:tdef);
     procedure inserttypeconv_internal(var p:tnode;def:tdef);
+    function remove_pc24_widening(var p:tnode; destination:tdef):boolean;
     procedure arrayconstructor_to_set(var p : tnode);inline;
     function arrayconstructor_to_set(p:tnode;freep:boolean):tnode;
     function arrayconstructor_can_be_set(p:tnode):boolean;
@@ -323,7 +324,7 @@ interface
 implementation
 
    uses
-      globtype,systems,constexp,compinnr,
+      globtype,systems,constexp,compinnr,pc24const,
       cutils,verbose,globals,widestr,ppu,
       symconst,symdef,symsym,symcpu,symtable,
       ncon,ncal,nset,nadd,nmem,nmat,nbas,nutils,ninl,nflw,
@@ -337,6 +338,31 @@ implementation
 *****************************************************************************}
     type
       ttypeconvnodetype = (tct_implicit,tct_explicit,tct_internal);
+
+    function remove_pc24_widening(var p:tnode; destination:tdef):boolean;
+      var
+        operand: tnode;
+      begin
+        { PC24 keeps the source expression type using an internal widening
+          wrapper. A Single consumer can use its already-rounded operand
+          directly, even when the consumer performs conversion implicitly.
+          The wrapper carries its defining scope through inline PPUs. }
+        result:=is_single(destination) and
+          (p.nodetype=typeconvn) and (nf_internal in p.flags) and
+          (cs_legacy_pc24 in p.localswitches) and
+          (p.resultdef.typ=floatdef) and
+          (tfloatdef(p.resultdef).floattype in [s64real,s80real,sc80real,s128real]) and
+          (ttypeconvnode(p).left.nodetype<>realconstn) and
+          is_single(ttypeconvnode(p).left.resultdef);
+        if result then
+          begin
+            operand:=ttypeconvnode(p).left;
+            ttypeconvnode(p).left:=nil;
+            p.free;
+            p:=operand;
+          end;
+      end;
+
 
     procedure do_inserttypeconv(var p: tnode;def: tdef; convtype: ttypeconvnodetype);
 
@@ -1613,6 +1639,20 @@ implementation
              SetCurFlag:=False;
 
            result:=crealconstnode.create(rv,resultdef);
+           if (cs_legacy_pc24 in localswitches) and
+             not is_currency(left.resultdef) and not is_currency(resultdef) then
+             begin
+               if tordconstnode(left).value.is_negative then
+                 trealconstnode(result).pc24_value:=pc24_from_int(tordconstnode(left).value.svalue)
+               else
+                 trealconstnode(result).pc24_value:=pc24_from_uint(tordconstnode(left).value.uvalue);
+               if tfloatdef(resultdef).floattype=s32real then
+                 trealconstnode(result).pc24_value:=pc24_storage(trealconstnode(result).pc24_value,24)
+               else if (nf_explicit in flags) and (tfloatdef(resultdef).floattype=s64real) then
+                 trealconstnode(result).pc24_value:=pc24_storage(trealconstnode(result).pc24_value,53);
+               if trealconstnode(result).pc24_value.valid then
+                 trealconstnode(result).value_real:=pc24_to_extended(trealconstnode(result).pc24_value);
+             end;
            if SetCurFlag then
              include(result.flags,nf_is_currency)
          end
@@ -3604,6 +3644,12 @@ implementation
 {$endif not CPUNO32BITOPS}
       begin
         result := nil;
+        if remove_pc24_widening(left,resultdef) then
+          begin
+            result:=left;
+            left:=nil;
+            exit;
+          end;
         { Constant folding and other node transitions to
           remove the typeconv node }
         case left.nodetype of
@@ -3647,7 +3693,10 @@ implementation
             begin
               if (convtype = tc_real_2_currency) then
                 result := typecheck_real_to_currency
-              else if (convtype = tc_real_2_real) then
+              else if (convtype = tc_real_2_real) or
+                ((convtype=tc_equal) and (cs_legacy_pc24 in localswitches) and
+                 (nf_explicit in flags) and (resultdef.typ=floatdef) and
+                 (tfloatdef(resultdef).floattype in [s32real,s64real])) then
                 result := typecheck_real_to_real
               else
                 exit;
@@ -3660,6 +3709,21 @@ implementation
                 begin
                   hp:=result;
                   result:=crealconstnode.create(trealconstnode(hp).value_real,resultdef);
+                  if (cs_legacy_pc24 in localswitches) and
+                    not is_currency(hp.resultdef) and not is_currency(resultdef) then
+                    begin
+                      trealconstnode(result).pc24_value:=trealconstnode(hp).pc24_value;
+                      { Implicit promotions retain the literal's binary80 tail.
+                        A source cast is an actual storage-precision barrier. }
+                      if (nf_explicit in flags) or (tfloatdef(resultdef).floattype=s32real) then
+                        case tfloatdef(resultdef).floattype of
+                          s32real: trealconstnode(result).pc24_value:=pc24_storage(trealconstnode(result).pc24_value,24);
+                          s64real: trealconstnode(result).pc24_value:=pc24_storage(trealconstnode(result).pc24_value,53);
+                          else ;
+                        end;
+                      if trealconstnode(result).pc24_value.valid then
+                        trealconstnode(result).value_real:=pc24_to_extended(trealconstnode(result).pc24_value);
+                    end;
                   if nf_is_currency in hp.flags then
                     include(result.flags,nf_is_currency);
                   if ([nf_explicit,nf_internal] * flags <> []) then

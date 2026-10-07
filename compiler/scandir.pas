@@ -430,6 +430,22 @@ unit scandir;
       end;
 
 
+    procedure dir_legacy_pc24;
+      begin
+        do_localswitch(cs_legacy_pc24);
+{$ifndef llvm}
+        if cs_legacy_pc24 in current_settings.localswitches then
+          Message1(scan_e_unsupported_switch,'LEGACYPC24 requires an LLVM target');
+{$endif llvm}
+      end;
+
+
+    procedure dir_delphi_order;
+      begin
+        do_localswitch(cs_delphi_order);
+      end;
+
+
     procedure dir_excessprecision;
       begin
         do_localswitch(cs_excessprecision);
@@ -2223,6 +2239,8 @@ unit scandir;
         AddDirective('ENDREGION',directive_all, @dir_endregion);
         AddDirective('ERROR',directive_all, @dir_error);
         AddDirective('ERRORC',directive_mac, @dir_error);
+        AddDirective('LEGACYPC24',directive_all, @dir_legacy_pc24);
+        AddDirective('DELPHIORDER',directive_all, @dir_delphi_order);
         AddDirective('EXCESSPRECISION',directive_all, @dir_excessprecision);
         AddDirective('EXTENDEDSYNTAX',directive_all, @dir_extendedsyntax);
         AddDirective('EXTERNALSYM',directive_all, @dir_externalsym);

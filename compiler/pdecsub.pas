@@ -3231,6 +3231,14 @@ var
                 proccalloptionStr[pd.proccalloption],
                 proccalloptionStr[proc_direcdata[p].pocall]);
             end;
+           { Preserve the source spelling before an unsupported convention
+             is mapped onto the target ABI. The directive table itself may
+             already have been normalized by an earlier declaration. }
+           case proc_direcdata[p].idtok of
+             _PASCAL: pd.source_proccalloption:=pocall_pascal;
+             _REGISTER: pd.source_proccalloption:=pocall_register;
+             else pd.source_proccalloption:=proc_direcdata[p].pocall;
+           end;
            { check if the target processor supports this calling convention }
            if not(proc_direcdata[p].pocall in supported_calling_conventions) then
              begin

@@ -610,7 +610,6 @@ function ExpM1(x : extended) : extended;
 function Power(base,exponent : float) : float;
 { base^exponent }
 function IntPower(base : float;exponent : longint) : float;
-
 operator ** (base,exponent : float) e: float; inline;
 operator ** (base,exponent : int64) res: int64;
 
@@ -1213,10 +1212,20 @@ end;
 
 
 { arcsin and arccos functions from AMath library (C) Copyright 2009-2013 Wolfgang Ehrhardt }
+{$ifdef FPC_USE_PC24_MATH}
+{$push}{$LEGACYPC24 ON}
+{ Delphi's imported Math routines execute their arithmetic under the same
+  PC24 policy as their callers. Keep the original ArcSin expression as well:
+  its subtraction after Sqr has a different rounding boundary. }
+{$endif}
 {$ifdef FPC_HAS_TYPE_SINGLE}
 function arcsin(x : Single) : Single;
 begin
+{$ifdef FPC_USE_PC24_MATH}
+  arcsin:=arctan2(x,sqrt(1.0-sqr(x)));
+{$else}
   arcsin:=arctan2(x,sqrt((1.0-x)*(1.0+x)));
+{$endif}
 end;
 {$ENDIF}
 
@@ -1224,7 +1233,11 @@ end;
 {$ifdef FPC_HAS_TYPE_DOUBLE}
 function arcsin(x : Double) : Double;
 begin
+{$ifdef FPC_USE_PC24_MATH}
+  arcsin:=arctan2(x,sqrt(1.0-sqr(x)));
+{$else}
   arcsin:=arctan2(x,sqrt((1.0-x)*(1.0+x)));
+{$endif}
 end;
 {$ENDIF}
 
@@ -1232,7 +1245,11 @@ end;
 {$ifdef FPC_HAS_TYPE_EXTENDED}
 function arcsin(x : Extended) : Extended;
 begin
+{$ifdef FPC_USE_PC24_MATH}
+  arcsin:=arctan2(x,sqrt(1.0-sqr(x)));
+{$else}
   arcsin:=arctan2(x,sqrt((1.0-x)*(1.0+x)));
+{$endif}
 end;
 {$ENDIF}
 
@@ -1259,11 +1276,23 @@ begin
   arccos:=arctan2(sqrt((1.0-x)*(1.0+x)),x);
 end;
 {$ENDIF}
+{$ifdef FPC_USE_PC24_MATH}
+{$pop}
+{$endif}
 
 
 {$ifndef FPC_MATH_HAS_ARCTAN2}
+{$if defined(FPC_USE_PC24_MATH) and defined(UNIX)}
+{ FPATAN is a transcendental instruction: it does not round the quotient
+  to PC24 first. Use libm's two-argument operation in the hardware profile. }
+function pc24_libm_atan2(y,x: Double): Double; cdecl;
+  external {$ifdef darwin}'c'{$else}'m'{$endif} name 'atan2';
+{$endif}
 function arctan2(y,x : float) : float;
   begin
+{$if defined(FPC_USE_PC24_MATH) and defined(UNIX)}
+    result:=pc24_libm_atan2(y,x);
+{$else}
     if x=0 then
       begin
         if y=0 then
@@ -1282,6 +1311,7 @@ function arctan2(y,x : float) : float;
           else
             result:=result+pi;
       end;
+{$endif}
   end;
 {$endif FPC_MATH_HAS_ARCTAN2}
 
@@ -1978,7 +2008,33 @@ function power(base,exponent : float) : float;
   end;
 
 
+{$ifdef FPC_USE_PC24_MATH}
+{$push}{$LEGACYPC24 ON}
+{$endif}
 function intpower(base : float;exponent : longint) : float;
+{$ifdef FPC_USE_PC24_MATH}
+  var
+    remaining: cardinal;
+  begin
+    { Match Delphi's PC24 operation order. Inverting the base first changes
+      negative powers; the reciprocal belongs after exponentiation. }
+    if exponent<0 then
+      remaining:=cardinal(-int64(exponent))
+    else
+      remaining:=cardinal(exponent);
+    result:=1.0;
+    while remaining<>0 do
+      begin
+        if remaining and 1<>0 then
+          result:=result*base;
+        remaining:=remaining shr 1;
+        if remaining<>0 then
+          base:=base*base;
+      end;
+    if exponent<0 then
+      result:=1.0/result;
+  end;
+{$else}
   begin
     if exponent<0 then
       begin
@@ -1994,8 +2050,12 @@ function intpower(base : float;exponent : longint) : float;
         base:=sqr(base);
       end;
   end;
+{$endif}
 
 
+{$ifdef FPC_USE_PC24_MATH}
+{$pop}
+{$endif}
 operator ** (base,exponent : float) e: float; inline;
   begin
     e:=power(base,exponent);
@@ -3868,6 +3928,9 @@ begin
 end;
 {$endif}
 
+{$ifdef FPC_USE_PC24_MATH}
+{$push}{$LEGACYPC24 ON}
+{$endif}
 {$ifdef FPC_HAS_TYPE_DOUBLE}
 function RoundTo(const AValue: Double; const Digits: TRoundToRange): Double;
 
@@ -3902,6 +3965,9 @@ begin
   RV:=IntPower(10,Digits);
   Result:=Round(AValue/RV)*RV;
 end;
+{$endif}
+{$ifdef FPC_USE_PC24_MATH}
+{$pop}
 {$endif}
 
 {$ifdef FPC_HAS_TYPE_SINGLE}

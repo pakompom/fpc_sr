@@ -28,7 +28,7 @@ interface
        { common }
        sysutils,cutils,compinnr,
        { target }
-       globtype,globals,widestr,constexp,
+       globtype,globals,widestr,constexp,pc24const,
        { symtable }
        symconst,symbase,symtype,symdef,defcmp,
        cclasses,
@@ -424,6 +424,7 @@ interface
           constdefderef : tderef;
           consttyp    : tconsttyp;
           value       : tconstvalue;
+          pc24_value  : tpc24real;
           constructor create_ord(const n : TSymStr;t : tconsttyp;v : tconstexprint;def:tdef);virtual;
           constructor create_ordptr(const n : TSymStr;t : tconsttyp;v : tconstptruint;def:tdef);virtual;
           constructor create_ptr(const n : TSymStr;t : tconsttyp;v : pointer;def:tdef);virtual;
@@ -2843,6 +2844,13 @@ implementation
                new(pd);
                pd^:=ppufile.getreal;
                value.valueptr:=pd;
+               pc24_value.valid:=ppufile.getbyte<>0;
+               pc24_value.negative:=ppufile.getbyte<>0;
+               pc24_value.significand:=qword(ppufile.getint64);
+               pc24_value.exponent:=ppufile.getlongint;
+               pc24_value.scaled:=ppufile.getbyte<>0;
+               pc24_value.scaled_significand:=qword(ppufile.getint64);
+               pc24_value.scaled_exponent:=ppufile.getlongint;
              end;
            constset :
              begin
@@ -2968,6 +2976,13 @@ implementation
              begin
                ppufile.putderef(constdefderef);
                ppufile.putreal(pbestreal(value.valueptr)^);
+               ppufile.putbyte(ord(pc24_value.valid));
+               ppufile.putbyte(ord(pc24_value.negative));
+               ppufile.putint64(int64(pc24_value.significand));
+               ppufile.putlongint(pc24_value.exponent);
+               ppufile.putbyte(ord(pc24_value.scaled));
+               ppufile.putint64(int64(pc24_value.scaled_significand));
+               ppufile.putlongint(pc24_value.scaled_exponent);
              end;
            constset :
              begin

@@ -1032,6 +1032,7 @@ implementation
         if is_constrealnode(left) then
           begin
              trealconstnode(left).value_real:=-trealconstnode(left).value_real;
+             trealconstnode(left).pc24_value.negative:=not trealconstnode(left).pc24_value.negative;
              { Avoid integer overflow on x86_64 CPU for currency value }
              { i386 uses fildll/fchs/fistll instructions which never seem
                to raise any coprocessor flags .. }

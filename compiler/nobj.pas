@@ -363,6 +363,7 @@ implementation
                      not(po_hascallingconvention in pd.procoptions) then
                     begin
                       pd.proccalloption:=vmtpd.proccalloption;
+                      pd.source_proccalloption:=vmtpd.source_proccalloption;
                       include(pd.procoptions,po_hascallingconvention);
                     end;
 

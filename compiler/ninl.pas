@@ -30,7 +30,8 @@ interface
 
     type
        TInlineNodeFlag = (
-         inf_inlineconst
+         inf_inlineconst,
+         inf_pc24_lowered
        );
 
        TInlineNodeFlags = set of TInlineNodeFlag;
@@ -143,7 +144,7 @@ interface
 implementation
 
     uses
-      verbose,globals,systems,constexp,
+      verbose,globals,systems,constexp,pc24const,delphiorder,
       globtype,cutils,cclasses,fmodule,
       symconst,symdef,symsym,symcpu,symtable,paramgr,defcmp,defutil,symbase,
       cpuinfo,cpubase,
@@ -2422,9 +2423,67 @@ implementation
         vl,vl2    : TConstExprInt;
         vr        : bestreal;
         helperres : Boolean;
+        pc24value : tpc24real;
+        pc24magnitude: qword;
+        pc24negative,pc24ok: boolean;
+        pc24order: longint;
 
       begin { simplify }
          result:=nil;
+         if inf_pc24_lowered in inlinenodeflags then
+           exit;
+         if (cs_legacy_pc24 in localswitches) and assigned(left) and
+            (left.nodetype=realconstn) then
+           begin
+             pc24ok:=false;
+             case inlinenumber of
+               in_abs_real:
+                 begin
+                   pc24value:=trealconstnode(left).pc24_value;
+                   pc24value.negative:=false;
+                   pc24ok:=pc24value.valid;
+                 end;
+               in_int_real:
+                 pc24ok:=pc24_int(trealconstnode(left).pc24_value,pc24value);
+               in_frac_real:
+                 pc24ok:=pc24_frac(trealconstnode(left).pc24_value,pc24value);
+               in_trunc_real,in_round_real:
+                 if pc24_integer(trealconstnode(left).pc24_value,
+                      inlinenumber=in_round_real,pc24magnitude,pc24negative) then
+                   begin
+                     if (pc24magnitude<QWord($8000000000000000)) or
+                        (pc24negative and (pc24magnitude=QWord($8000000000000000))) then
+                       begin
+                         vl:=pc24magnitude;
+                         if pc24negative then vl:=-vl;
+                         exit(cordconstnode.create(vl,s64inttype,true));
+                       end;
+                   end;
+               else ;
+             end;
+             if pc24ok then
+               begin
+                 result:=crealconstnode.create(pc24_to_extended(pc24value),resultdef);
+                 trealconstnode(result).pc24_value:=pc24value;
+                 exit;
+               end;
+           end;
+         if (cs_legacy_pc24 in localswitches) and
+            (inlinenumber in [in_min_single,in_min_double,in_max_single,in_max_double]) and
+            assigned(left) and (left.nodetype=callparan) and
+            assigned(tcallparanode(left).nextpara) then
+           begin
+             hp:=tcallparanode(left).paravalue;
+             hp2:=tcallparanode(tcallparanode(left).nextpara).paravalue;
+             if (hp.nodetype=realconstn) and (hp2.nodetype=realconstn) and
+                pc24_compare(trealconstnode(hp).pc24_value,trealconstnode(hp2).pc24_value,pc24order) then
+               begin
+                 if (pc24order<=0)=(inlinenumber in [in_min_single,in_min_double]) then
+                   exit(hp.getcopy)
+                 else
+                   exit(hp2.getcopy);
+               end;
+           end;
          { handle intern constant functions in separate case }
          if inf_inlineconst in inlinenodeflags then
           begin
@@ -3379,6 +3438,9 @@ implementation
          hp        : tnode;
          temp_pnode: pnode;
          convdef   : tdef;
+         pc24proc  : string;
+         pc24folded: tpc24real;
+         source_demand: word;
       begin
         result:=nil;
         { when handling writeln "left" contains no valid address }
@@ -4061,6 +4123,16 @@ implementation
               in_pi_real :
                 begin
                   resultdef:=pbestrealtype^;
+                  if cs_legacy_pc24 in localswitches then
+                    begin
+                      { FLDPI loads the binary80 constant independently of
+                        precision control. Expose it before parent lowering. }
+                      result:=crealconstnode.create(getpi,resultdef);
+                      trealconstnode(result).pc24_value.valid:=true;
+                      trealconstnode(result).pc24_value.negative:=false;
+                      trealconstnode(result).pc24_value.significand:=QWord($c90fdaa22168c235);
+                      trealconstnode(result).pc24_value.exponent:=-62;
+                    end;
                 end;
 
               in_abs_long:
@@ -4334,6 +4406,120 @@ implementation
             end;
           end;
 
+        if not assigned(result) and not codegenerror and
+           (cs_legacy_pc24 in localswitches) and
+           not(inf_pc24_lowered in inlinenodeflags) and
+           (inlinenumber=in_frac_real) then
+          begin
+            source_demand:=delphi_source_demand(self);
+            { Extract the integral part exactly first. The original x87
+              routine restores PC24 before its final subtraction. }
+            result:=simplify(false);
+            if assigned(result) then exit;
+            if left.nodetype=callparan then
+              temp_pnode:=@tcallparanode(left).left
+            else
+              temp_pnode:=@left;
+            if pc24_needs_extended(temp_pnode^) then
+              begin
+                if target_info.cpu<>cpu_x86_64 then
+                  begin
+                    Comment(V_Error,'LEGACYPC24 native Extended Frac is not supported on this target');
+                    exit(cerrornode.create);
+                  end;
+                inserttypeconv(temp_pnode^,s80floattype);
+                result:=ccallnode.createintern('fpc_pc24_frac_extended',
+                  ccallparanode.create(temp_pnode^,nil));
+                temp_pnode^:=nil;
+              end
+            else
+              begin
+                hp:=cinlinenode.create(in_frac_real,false,left);
+                include(tinlinenode(hp).inlinenodeflags,inf_pc24_lowered);
+                hp.localswitches:=localswitches;
+                left:=nil;
+                result:=ctypeconvnode.create_internal(hp,s32floattype);
+              end;
+            result:=ctypeconvnode.create_internal(result,resultdef);
+            result.localswitches:=localswitches;
+            delphi_set_source_order(result,source_demand,true,true);
+          end;
+        if not assigned(result) and not codegenerror and
+           (cs_legacy_pc24 in localswitches) and
+           not(inf_pc24_lowered in inlinenodeflags) and
+           (inlinenumber in [in_sqr_real,in_sqrt_real]) then
+          begin
+            source_demand:=delphi_source_demand(self);
+            if left.nodetype=callparan then
+              temp_pnode:=@tcallparanode(left).left
+            else
+              temp_pnode:=@left;
+            if (temp_pnode^.resultdef.size>8) and not is_extended(temp_pnode^.resultdef) then
+              begin
+                Comment(V_Error,'LEGACYPC24 Sqr/Sqrt operand format is not supported');
+                exit(cerrornode.create);
+              end;
+            { Pure constant Sqr is a compile-time binary80 operation. }
+            if (inlinenumber=in_sqr_real) and
+               (temp_pnode^.nodetype=realconstn) and
+               pc24_fold('*',trealconstnode(temp_pnode^).pc24_value,
+                 trealconstnode(temp_pnode^).pc24_value,64,pc24folded) then
+              begin
+                result:=crealconstnode.create(pc24_to_extended(pc24folded),resultdef);
+                trealconstnode(result).pc24_value:=pc24folded;
+                exit;
+              end;
+            if (inlinenumber=in_sqrt_real) and
+               (temp_pnode^.nodetype=realconstn) and
+               pc24_sqrt(trealconstnode(temp_pnode^).pc24_value,64,pc24folded) then
+              begin
+                result:=crealconstnode.create(pc24_to_extended(pc24folded),resultdef);
+                trealconstnode(result).pc24_value:=pc24folded;
+                exit;
+              end;
+            if pc24_needs_extended(temp_pnode^) then
+              begin
+                if target_info.cpu<>cpu_x86_64 then
+                  begin
+                    Comment(V_Error,'LEGACYPC24 native Extended Sqr/Sqrt is not supported on this target');
+                    exit(cerrornode.create);
+                  end;
+                inserttypeconv(temp_pnode^,s80floattype);
+                if inlinenumber=in_sqr_real then
+                  pc24proc:='fpc_pc24_sqr_extended'
+                else
+                  pc24proc:='fpc_pc24_sqrt_extended';
+                hp:=ccallnode.createintern(pc24proc,
+                  ccallparanode.create(temp_pnode^,nil));
+              end
+            else if pc24_is_single_operand(temp_pnode^) then
+              begin
+                pc24_narrow_single(temp_pnode^);
+                if inlinenumber=in_sqrt_real then
+                  begin
+                    hp:=cinlinenode.create(in_sqrt_real,false,temp_pnode^);
+                    include(tinlinenode(hp).inlinenodeflags,inf_pc24_lowered);
+                    hp.localswitches:=localswitches;
+                  end
+                else
+                  hp:=ccallnode.createintern('fpc_pc24_sqr_single',
+                    ccallparanode.create(temp_pnode^,nil));
+              end
+            else
+              begin
+                inserttypeconv(temp_pnode^,s64floattype);
+                if inlinenumber=in_sqr_real then
+                  pc24proc:='fpc_pc24_sqr'
+                else
+                  pc24proc:='fpc_pc24_sqrt';
+                hp:=ccallnode.createintern(pc24proc,
+                  ccallparanode.create(temp_pnode^,nil));
+              end;
+            temp_pnode^:=nil;
+            result:=ctypeconvnode.create_internal(hp,resultdef);
+            result.localswitches:=localswitches;
+            delphi_set_source_order(result,source_demand,true,true);
+          end;
         if not assigned(result) and not
            codegenerror then
           result:=simplify(false);
@@ -6328,4 +6514,3 @@ implementation
        end;
 
 end.
-

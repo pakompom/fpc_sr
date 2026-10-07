@@ -712,6 +712,9 @@ interface
           paras           : tparalist;
           proctypeoption  : tproctypeoption;
           proccalloption  : tproccalloption;
+          { Source convention before target ABI normalization. Used only for
+            opt-in Delphi expression scheduling. }
+          source_proccalloption : tproccalloption;
           procoptions     : tprocoptions;
           callerargareasize,
           calleeargareasize: pint;
@@ -5733,6 +5736,7 @@ implementation
          maxparacount:=0;
          proctypeoption:=potype_none;
          proccalloption:=pocall_none;
+         source_proccalloption:=pocall_none;
          procoptions:=[];
          returndef:=voidtype;
          returndefderef.reset;
@@ -5919,6 +5923,7 @@ implementation
          ppufile.getderef(returndefderef);
          proctypeoption:=tproctypeoption(ppufile.getbyte);
          proccalloption:=tproccalloption(ppufile.getbyte);
+         source_proccalloption:=tproccalloption(ppufile.getbyte);
          ppufile.getset(tppuset8(procoptions));
 
          funcretloc[callerside].init;
@@ -5940,6 +5945,7 @@ implementation
          ppufile.putderef(returndefderef);
          ppufile.putbyte(ord(proctypeoption));
          ppufile.putbyte(ord(proccalloption));
+         ppufile.putbyte(ord(source_proccalloption));
          ppufile.putset(tppuset8(procoptions));
 
          if (po_explicitparaloc in procoptions) then
@@ -6179,6 +6185,7 @@ implementation
         else
           tabstractprocdef(result).proctypeoption:=proctypeoption;
         tabstractprocdef(result).proccalloption:=proccalloption;
+        tabstractprocdef(result).source_proccalloption:=source_proccalloption;
         tabstractprocdef(result).procoptions:=procoptions;
         if (copytyp=pc_bareproc) then
           tabstractprocdef(result).procoptions:=tabstractprocdef(result).procoptions*[po_explicitparaloc,po_hascallingconvention,po_varargs,po_iocheck,po_has_importname,po_has_importdll];
@@ -7765,6 +7772,7 @@ implementation
 
         tprocvardef(result).proctypeoption:=proctypeoption;
         tprocvardef(result).proccalloption:=proccalloption;
+        tprocvardef(result).source_proccalloption:=source_proccalloption;
         tprocvardef(result).procoptions:=procoptions;
         tprocvardef(result).callerargareasize:=callerargareasize;
         tprocvardef(result).calleeargareasize:=calleeargareasize;

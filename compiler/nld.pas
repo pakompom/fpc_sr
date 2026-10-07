@@ -687,6 +687,7 @@ implementation
     function tassignmentnode.simplify(forinline : boolean) : tnode;
       begin
         result:=nil;
+        remove_pc24_widening(right,left.resultdef);
         { assignment nodes can perform several floating point }
         { type conversions directly, so no typeconversions    }
         { are inserted in those cases. When inlining, a       }
@@ -870,6 +871,9 @@ implementation
 {$endif}
         then
           begin
+            { This assignment performs its own conversion, so no outer
+              typeconvnode exists to remove a redundant PC24 round trip. }
+            remove_pc24_widening(right,left.resultdef);
             if not(nf_internal in flags) then
               check_ranges(fileinfo,right,left.resultdef);
           end

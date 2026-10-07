@@ -35,7 +35,11 @@ interface
        TAddNodeFlag = (
          anf_has_pointerdiv,
          { the node shall be short boolean evaluated, this flag has priority over localswitches }
-         anf_short_bool
+         anf_short_bool,
+         { Keep one hardware rounding boundary, including across PPUs/inlining. }
+         anf_pc24_lowered,
+         { Source operands have already been captured in Delphi order. }
+         anf_delphi_ordered
        );
 
        TAddNodeFlags = set of TAddNodeFlag;
@@ -45,6 +49,9 @@ interface
           resultrealdefderef: tderef;
           function pass_typecheck_internal:tnode;
           function do_currency_corrections: tnode;
+          function lower_delphi_order: tnode;
+          function lower_pc24: tnode;
+          function lower_pc24_compare: tnode;
        public
           resultrealdef : tdef;
           addnodeflags : TAddNodeFlags;
@@ -129,6 +136,10 @@ interface
        end;
        taddnodeclass = class of taddnode;
 
+    function pc24_is_single_operand(p: tnode): boolean;
+    function pc24_needs_extended(p: tnode): boolean;
+    procedure pc24_narrow_single(var p: tnode);
+
     var
        { caddnode is used to create nodes of the add type }
        { the virtual constructor allows to assign         }
@@ -144,7 +155,7 @@ implementation
 {$ELSE}
       fksysutl,
 {$ENDIF}
-      globtype,systems,constexp,compinnr,
+      globtype,systems,constexp,compinnr,pc24const,delphiorder,
       cutils,verbose,globals,widestr,
       tokens,
       symconst,symdef,symsym,symcpu,symtable,defutil,defcmp,
@@ -190,6 +201,379 @@ const
         else if t2.typ=floatdef then
           result:=t2
         else internalerror(200508061);
+      end;
+
+
+    function pc24_is_single_operand(p: tnode): boolean;
+      begin
+        { Widening a known Single does not create more significant bits. This
+          includes a PC24 result wrapped back into the source expression type. }
+        if (p.nodetype=typeconvn) and
+           is_fpu(p.resultdef) and
+           is_fpu(ttypeconvnode(p).left.resultdef) and
+           (p.resultdef.size>=ttypeconvnode(p).left.resultdef.size) then
+          exit(pc24_is_single_operand(ttypeconvnode(p).left));
+        if p.nodetype=realconstn then
+          exit(pc24_exact_single(trealconstnode(p).pc24_value));
+        result:=is_single(p.resultdef);
+      end;
+
+
+    function pc24_needs_extended(p: tnode): boolean;
+      var
+        hi,lo: double;
+      begin
+        { Ignore only widening conversions: a Double explicitly stored by
+          the source remains a binary64 operand even when later promoted. }
+        while (p.nodetype=typeconvn) and is_fpu(p.resultdef) and
+              is_fpu(ttypeconvnode(p).left.resultdef) and
+              (p.resultdef.size>=ttypeconvnode(p).left.resultdef.size) do
+          p:=ttypeconvnode(p).left;
+        if p.nodetype=realconstn then
+          exit(not pc24_split(trealconstnode(p).pc24_value,hi,lo));
+        result:=is_extended(p.resultdef);
+      end;
+
+
+    procedure pc24_narrow_single(var p: tnode);
+      var
+        operand: tnode;
+      begin
+        { The proof has established that these widening conversions add no
+          information. Remove them explicitly: LLVM constrained conversions
+          intentionally cannot optimize the round trip away. }
+        while (p.nodetype=typeconvn) and is_fpu(p.resultdef) and
+              is_fpu(ttypeconvnode(p).left.resultdef) and
+              (p.resultdef.size>=ttypeconvnode(p).left.resultdef.size) do
+          begin
+            operand:=ttypeconvnode(p).left;
+            ttypeconvnode(p).left:=nil;
+            p.free;
+            p:=operand;
+          end;
+        inserttypeconv(p,s32floattype);
+      end;
+
+
+    function delphi_capture_first(var left,right: tnode; firstleft: boolean;
+      out statements: tstatementnode): tnode;
+      var
+        first: pnode;
+        temp: ttempcreatenode;
+      begin
+        result:=nil;
+        statements:=nil;
+        if not(might_have_sideeffects(left) or might_have_sideeffects(right)) then exit;
+        if firstleft then first:=@left else first:=@right;
+        if is_constnode(first^) then exit;
+        result:=internalstatements(statements);
+        temp:=ctempcreatenode.create(first^.resultdef,first^.resultdef.size,tt_persistent,true);
+        addstatement(statements,temp);
+        addstatement(statements,cassignmentnode.create(ctemprefnode.create(temp),first^));
+        first^:=ctemprefnode.create(temp);
+        { The final expression consumes the captured normal temporary. }
+        addstatement(statements,ctempdeletenode.create_normal_temp(temp));
+      end;
+
+
+    function taddnode.lower_delphi_order: tnode;
+      var
+        source_demand: word;
+        source_extended: boolean;
+        sequence: tnode;
+        statements: tstatementnode;
+        op: taddnode;
+      begin
+        result:=nil;
+        if not(cs_delphi_order in localswitches) or
+           (anf_delphi_ordered in addnodeflags) or
+           (anf_pc24_lowered in addnodeflags) or
+           not(nodetype in [addn,subn,muln,slashn,ltn,lten,gtn,gten,equaln,unequaln]) or
+           not(is_fpu(left.resultdef) and is_fpu(right.resultdef)) then
+          exit;
+        source_demand:=delphi_source_demand(self);
+        source_extended:=delphi_source_extended(self);
+        sequence:=delphi_capture_first(left,right,delphi_left_first(left,right),statements);
+        if not assigned(sequence) then exit;
+        op:=caddnode.create(nodetype,left,right);
+        op.localswitches:=localswitches;
+        op.addnodeflags:=addnodeflags+[anf_delphi_ordered];
+        delphi_set_source_order(op,source_demand,source_extended);
+        left:=nil;
+        right:=nil;
+        addstatement(statements,op);
+        sequence.localswitches:=localswitches;
+        delphi_set_source_order(sequence,source_demand,source_extended);
+        result:=sequence;
+      end;
+
+
+    function taddnode.lower_pc24_compare: tnode;
+      var
+        order: longint;
+        truth: boolean;
+        c,arg: tnode;
+        d: double;
+        hd: tpc24real;
+      begin
+        result:=nil;
+        if not(cs_legacy_pc24 in localswitches) or
+           (anf_pc24_lowered in addnodeflags) or
+           not(nodetype in [ltn,lten,gtn,gten,equaln,unequaln]) or
+           not(is_fpu(left.resultdef) and is_fpu(right.resultdef)) then
+          exit;
+        if (left.nodetype=realconstn) and (right.nodetype=realconstn) and
+           pc24_compare(trealconstnode(left).pc24_value,
+             trealconstnode(right).pc24_value,order) then
+          begin
+            case nodetype of
+              ltn: truth:=order<0;
+              lten: truth:=order<=0;
+              gtn: truth:=order>0;
+              gten: truth:=order>=0;
+              equaln: truth:=order=0;
+              unequaln: truth:=order<>0;
+              else internalerror(2026100704);
+            end;
+            exit(cordconstnode.create(ord(truth),pasbool1type,true));
+          end;
+        c:=nil;
+        if (right.nodetype=realconstn) and
+           not pc24_exact_double(trealconstnode(right).pc24_value) then
+          begin
+            c:=right;
+            arg:=left;
+          end
+        else if (left.nodetype=realconstn) and
+                not pc24_exact_double(trealconstnode(left).pc24_value) then
+          begin
+            c:=left;
+            arg:=right;
+          end;
+        if not assigned(c) then exit;
+        if arg.resultdef.size>8 then
+          begin
+            { Native binary80 comparison already uses the exact literal. }
+            if (target_info.cpu=cpu_x86_64) and is_extended(arg.resultdef) then
+              exit;
+            Comment(V_Error,'LEGACYPC24 comparison operand format is not supported');
+            exit(cerrornode.create);
+          end;
+        if c=left then
+          nodetype:=swap_relation[nodetype];
+        d:=pc24_to_double(trealconstnode(c).pc24_value);
+        hd:=pc24_from_double(d);
+        if not pc24_compare(trealconstnode(c).pc24_value,hd,order) then
+          begin
+            Comment(V_Error,'LEGACYPC24 comparison literal is outside the hardware Double range');
+            exit(cerrornode.create);
+          end;
+        if nodetype in [equaln,unequaln] then
+          begin
+            inserttypeconv(arg,s64floattype);
+            result:=ccallnode.createintern('fpc_pc24_unrepresentable_equal',
+              ccallparanode.create(arg,nil));
+            if nodetype=unequaln then result:=cnotnode.create(result);
+            c.free;
+            left:=nil;
+            right:=nil;
+            exit;
+          end;
+        { There is no binary64 number strictly between d and this literal.
+          Adjusting the open/closed threshold therefore preserves ordered
+          comparisons, including NaNs, without a runtime helper. }
+        if nodetype in [ltn,lten] then
+          if order>0 then nodetype:=lten else nodetype:=ltn
+        else
+          if order>0 then nodetype:=gtn else nodetype:=gten;
+        trealconstnode(c).value_real:=d;
+        trealconstnode(c).pc24_value:=hd;
+        left:=arg;
+        right:=c;
+        include(addnodeflags,anf_pc24_lowered);
+      end;
+
+
+    function taddnode.lower_pc24: tnode;
+      var
+        op: taddnode;
+        procname: string;
+        folded: tpc24real;
+        operation: char;
+        coefficient,argument,rawarg: tnode;
+        coefficientleft: boolean;
+        inputbits: byte;
+        hi,lo: double;
+        source_demand: word;
+      begin
+        result:=nil;
+        if not(cs_legacy_pc24 in localswitches) or
+           (anf_pc24_lowered in addnodeflags) or
+           not(nodetype in [addn,subn,muln,slashn]) or
+           not is_fpu(resultdef) or
+           is_currency(resultdef) or is_fpucomp(resultdef) then
+          exit;
+        { Delphi evaluates pure constant subtrees at binary80 precision,
+          independently of the runtime precision-control setting. }
+        if (left.nodetype=realconstn) and (right.nodetype=realconstn) then
+          begin
+            case nodetype of
+              addn: operation:='+';
+              subn: operation:='-';
+              muln: operation:='*';
+              slashn: operation:='/';
+              else internalerror(2026100702);
+            end;
+            if pc24_fold(operation,trealconstnode(left).pc24_value,
+                 trealconstnode(right).pc24_value,64,folded) then
+              begin
+                result:=crealconstnode.create(pc24_to_extended(folded),resultdef);
+                trealconstnode(result).pc24_value:=folded;
+                exit;
+              end;
+          end;
+        source_demand:=delphi_source_demand(self);
+        if pc24_needs_extended(left) or pc24_needs_extended(right) then
+          begin
+            if target_info.cpu<>cpu_x86_64 then
+              begin
+                Comment(V_Error,'LEGACYPC24 native Extended arithmetic is not supported on this target');
+                exit(cerrornode.create);
+              end;
+            inserttypeconv(left,s80floattype);
+            inserttypeconv(right,s80floattype);
+            case nodetype of
+              addn: procname:='fpc_pc24_add_extended';
+              subn: procname:='fpc_pc24_sub_extended';
+              muln: procname:='fpc_pc24_mul_extended';
+              slashn: procname:='fpc_pc24_div_extended';
+              else internalerror(2026101001);
+            end;
+            result:=ccallnode.createintern(procname,
+              ccallparanode.create(right,ccallparanode.create(left,nil)));
+            left:=nil;
+            right:=nil;
+            result:=ctypeconvnode.create_internal(result,resultdef);
+            result.localswitches:=localswitches;
+            delphi_set_source_order(result,source_demand,true);
+            exit;
+          end;
+        { A source binary80 literal may have a meaningful tail beyond
+          binary64. Use a certified nearby coefficient only in its proven
+          input-width domain; otherwise pass its exact high/low decomposition. }
+        coefficient:=nil;
+        coefficientleft:=false;
+        if (left.nodetype=realconstn) and
+           not pc24_exact_double(trealconstnode(left).pc24_value) then
+          begin
+            coefficient:=left;
+            argument:=right;
+            coefficientleft:=true;
+          end
+        else if (right.nodetype=realconstn) and
+                not pc24_exact_double(trealconstnode(right).pc24_value) then
+          begin
+            coefficient:=right;
+            argument:=left;
+          end;
+        if assigned(coefficient) then
+          begin
+            inputbits:=0;
+            if pc24_is_single_operand(argument) then
+              inputbits:=24
+            else
+              begin
+                rawarg:=argument;
+                while (rawarg.nodetype=typeconvn) and
+                      is_fpu(rawarg.resultdef) do
+                  rawarg:=ttypeconvnode(rawarg).left;
+                if is_integer(rawarg.resultdef) and (rawarg.resultdef.size<=4) then
+                  inputbits:=32;
+              end;
+            if (nodetype=muln) and (inputbits<>0) and
+               pc24_coefficient(trealconstnode(coefficient).pc24_value,inputbits,hi) then
+              begin
+                trealconstnode(coefficient).value_real:=hi;
+                trealconstnode(coefficient).pc24_value:=pc24_from_double(hi);
+                { The certificate covers Double multiplication followed by
+                  PC24 conversion. A midpoint residual correction here would
+                  change the operation that was proved. }
+                inserttypeconv(left,s64floattype);
+                inserttypeconv(right,s64floattype);
+                op:=caddnode.create(muln,left,right);
+                op.localswitches:=localswitches;
+                include(op.addnodeflags,anf_pc24_lowered);
+                left:=nil;
+                right:=nil;
+                result:=ctypeconvnode.create_internal(op,s32floattype);
+                result:=ctypeconvnode.create_internal(result,resultdef);
+                result.localswitches:=localswitches;
+                delphi_set_source_order(result,source_demand,true);
+                exit;
+              end
+            else
+              begin
+                if not pc24_split(trealconstnode(coefficient).pc24_value,hi,lo) then
+                  begin
+                    Comment(V_Error,'LEGACYPC24 literal is outside the hardware Double exponent range');
+                    exit(cerrornode.create);
+                  end;
+                case nodetype of
+                  addn: procname:='fpc_pc24_add_tail';
+                  subn:
+                    if coefficientleft then procname:='fpc_pc24_rsub_tail'
+                    else procname:='fpc_pc24_sub_tail';
+                  muln: procname:='fpc_pc24_mul_tail';
+                  slashn:
+                    if coefficientleft then procname:='fpc_pc24_rdiv_tail'
+                    else procname:='fpc_pc24_div_tail';
+                  else internalerror(2026100703);
+                end;
+                inserttypeconv(argument,s64floattype);
+                result:=ccallnode.createintern(procname,
+                  ccallparanode.create(crealconstnode.create(lo,s64floattype),
+                    ccallparanode.create(crealconstnode.create(hi,s64floattype),
+                      ccallparanode.create(argument,nil))));
+                coefficient.free;
+                left:=nil;
+                right:=nil;
+                result:=ctypeconvnode.create_internal(result,resultdef);
+                result.localswitches:=localswitches;
+                delphi_set_source_order(result,source_demand,true);
+                exit;
+              end;
+          end;
+        if pc24_is_single_operand(left) and pc24_is_single_operand(right) then
+          begin
+            pc24_narrow_single(left);
+            pc24_narrow_single(right);
+            op:=caddnode.create(nodetype,left,right);
+            op.localswitches:=localswitches;
+            include(op.addnodeflags,anf_pc24_lowered);
+            result:=op;
+          end
+        else
+          begin
+            { Keep all bits of wide operands and of Int32 loads. The helpers
+              use native Double arithmetic and correct only midpoint cases. }
+            inserttypeconv(left,s64floattype);
+            inserttypeconv(right,s64floattype);
+            case nodetype of
+              addn: procname:='fpc_pc24_add';
+              subn: procname:='fpc_pc24_sub';
+              muln: procname:='fpc_pc24_mul';
+              slashn: procname:='fpc_pc24_div';
+              else internalerror(2026100701);
+            end;
+            result:=ccallnode.createintern(procname,
+              ccallparanode.create(right,ccallparanode.create(left,nil)));
+          end;
+        left:=nil;
+        right:=nil;
+        { Preserve overload resolution and source-level expression types. }
+        result:=ctypeconvnode.create_internal(result,resultdef);
+        result.localswitches:=localswitches;
+        delphi_set_source_order(result,source_demand,true);
       end;
 
 
@@ -738,6 +1122,9 @@ const
         v2p, c2p, c1p, v1p: pnode;
         p1,p2: TConstPtrUInt;
       begin
+        result:=nil;
+        if anf_pc24_lowered in addnodeflags then
+          exit;
         result:=do_currency_corrections;
         if Assigned(result) then
           Exit;
@@ -2038,6 +2425,7 @@ const
                not(might_have_sideeffects(left)) then
               begin
                 result:=cinlinenode.create(in_sqr_real,false,PruneKeepLeft());
+                result.localswitches:=localswitches;
                 inserttypeconv(result,resultdef);
                 exit;
               end;
@@ -2201,7 +2589,7 @@ const
     function taddnode.pass_typecheck_internal:tnode;
       var
         hp          : tnode;
-        rd,ld,nd    : tdef;
+        rd,ld,nd,pc24_staticdef : tdef;
         hsym        : tfieldvarsym;
         llow,lhigh,
         rlow,rhigh  : tconstexprint;
@@ -2291,6 +2679,7 @@ const
 
       begin
          result:=nil;
+         pc24_staticdef:=nil;
          rlow:=0;
          llow:=0;
          rhigh:=0;
@@ -2408,14 +2797,43 @@ const
 
         if (right.resultdef.typ=floatdef) or (left.resultdef.typ=floatdef) then
          begin
+           { An x87 integer load is exact before arithmetic. In particular,
+             Single + Int32 must not round the integer to Single first. }
+           if (cs_legacy_pc24 in localswitches) and
+              not(anf_pc24_lowered in addnodeflags) and
+              (nodetype in [addn,subn,muln,slashn]) and
+              not(is_currency(left.resultdef) or is_currency(right.resultdef) or
+                  is_fpucomp(left.resultdef) or is_fpucomp(right.resultdef)) then
+             begin
+               if ((left.resultdef.size>8) and not is_extended(left.resultdef)) or
+                  ((right.resultdef.size>8) and not is_extended(right.resultdef)) then
+                 begin
+                   Comment(V_Error,'LEGACYPC24 arithmetic operand format is not supported');
+                   exit(cerrornode.create);
+                 end;
+               pc24_staticdef:=getbestreal(left.resultdef,right.resultdef);
+               resultrealdef:=s64floattype;
+               if pc24_needs_extended(left) or pc24_needs_extended(right) then
+                 begin
+                   if target_info.cpu<>cpu_x86_64 then
+                     begin
+                       Comment(V_Error,'LEGACYPC24 native Extended arithmetic is not supported on this target');
+                       exit(cerrornode.create);
+                     end;
+                   resultrealdef:=s80floattype;
+                 end;
+               inserttypeconv(left,resultrealdef);
+               inserttypeconv(right,resultrealdef);
+             end
            { when both floattypes are already equal then use that
              floattype for results }
-           if (right.resultdef.typ=floatdef) and
+           else if (right.resultdef.typ=floatdef) and
               (left.resultdef.typ=floatdef) and
               (tfloatdef(left.resultdef).floattype=tfloatdef(right.resultdef).floattype) and
               not(tfloatdef(left.resultdef).floattype in [s64comp,s64currency]) then
              begin
-               if cs_excessprecision in current_settings.localswitches then
+               if (cs_excessprecision in current_settings.localswitches) and
+                  not(anf_pc24_lowered in addnodeflags) then
                  begin
                    resultrealdef:=pbestrealtype^;
                    inserttypeconv(right,resultrealdef);
@@ -3558,6 +3976,16 @@ const
              end;
           end;
 
+         if assigned(pc24_staticdef) then
+           resultdef:=pc24_staticdef;
+
+         result:=lower_delphi_order;
+         if assigned(result) then exit;
+         result:=lower_pc24_compare;
+         if assigned(result) then exit;
+         result:=lower_pc24;
+         if assigned(result) then
+           exit;
          result:=do_currency_corrections;
 
          if not(codegenerror) and
@@ -4502,7 +4930,9 @@ const
         inlinennr : tinlinenumber;
       begin
         result:=nil;
-        if (cs_opt_fastmath in current_settings.optimizerswitches) and
+        if not(anf_pc24_lowered in addnodeflags) and
+          not(cs_legacy_pc24 in localswitches) and
+          (cs_opt_fastmath in current_settings.optimizerswitches) and
           use_fma and
           (nodetype in [addn,subn]) and
           (rd.typ=floatdef) and (ld.typ=floatdef) and

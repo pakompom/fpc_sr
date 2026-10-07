@@ -13,6 +13,26 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
 
 ## Local changes
 
+- `{$LEGACYPC24 ON/OFF}` selects 24-bit LLVM arithmetic and Delphi binary80
+  constant semantics while preserving declared storage types. Single/Double
+  expressions use hardware operations with corrections at rounding boundaries;
+  native x86 Extended operands use x87 helpers. The mode requires nearest-even
+  rounding and `-OoNOFASTMATH`. It does not provide general x87 exception or
+  transcendental emulation, or wider exponents on targets without Extended.
+  Constants and inline routines retain their defining unit's arithmetic mode.
+
+- `{$DELPHIORDER ON/OFF}` independently selects Delphi 2007 operand and argument
+  evaluation order. Source scheduling information survives lowering, inlining
+  and unit files; the target calling ABI is unchanged. Either directive can be
+  used alone. Compiler regressions follow the standard `tests/test/tpc24*` and
+  `tests/test/tdelphiorder*` test-suite conventions.
+
+- RTL build switches `FPC_USE_SIMPLE_RANDOM` and `FPC_USE_PC24_RANDOM` select
+  Delphi's generator and PC24 random-result behavior. `FPC_USE_PC24_MATH` selects
+  the corresponding rounding and algorithms in `Math`. These switches are
+  opt-in and do not change ordinary RTL builds. Rebuild the compiler and RTL
+  together when updating this fork's unit-file format.
+
 - [LLVM assembly references](compiler/rautils.pas): record references to assembler
   routines and external aliases in `llvm.compiler.used`. Assembler routines are
   now LLVM functions containing inline assembly; excluding them let LTO delete

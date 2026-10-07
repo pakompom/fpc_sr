@@ -26,7 +26,7 @@ unit ncon;
 interface
 
     uses
-      globtype,widestr,constexp,
+      globtype,widestr,constexp,pc24const,
       node,
       aasmbase,aasmcnst,cpuinfo,globals,
       symconst,symtype,symdef,symsym;
@@ -42,6 +42,8 @@ interface
           typedef : tdef;
           typedefderef : tderef;
           value_real : bestreal;
+          { Original binary80 value, independent of host bestreal. }
+          pc24_value : tpc24real;
           value_currency : currency;
           lab_real : tasmlabel;
           constructor create(v : bestreal;def:tdef);virtual;
@@ -365,6 +367,7 @@ implementation
                 p1:=crealconstnode.create(default(bestreal),p.constdef)
               else
                 p1:=crealconstnode.create(pbestreal(p.value.valueptr)^,p.constdef);
+              trealconstnode(p1).pc24_value:=p.pc24_value;
             end;
           constset :
             begin
@@ -451,6 +454,7 @@ implementation
              internalerror(2013102701);
          end;
          value_real:=v;
+         pc24_value:=pc24_from_extended(v);
          value_currency:=v;
          lab_real:=nil;
       end;
@@ -469,6 +473,13 @@ implementation
         inherited ppuload(t,ppufile);
         ppufile.getderef(typedefderef);
         value_real:=ppufile.getreal;
+        pc24_value.valid:=ppufile.getbyte<>0;
+        pc24_value.negative:=ppufile.getbyte<>0;
+        pc24_value.significand:=qword(ppufile.getint64);
+        pc24_value.exponent:=ppufile.getlongint;
+        pc24_value.scaled:=ppufile.getbyte<>0;
+        pc24_value.scaled_significand:=qword(ppufile.getint64);
+        pc24_value.scaled_exponent:=ppufile.getlongint;
         i:=ppufile.getint64;
         value_currency:=PCurrency(@i)^;
         lab_real:=tasmlabel(ppufile.getasmsymbol);
@@ -480,6 +491,13 @@ implementation
         inherited ppuwrite(ppufile);
         ppufile.putderef(typedefderef);
         ppufile.putreal(value_real);
+        ppufile.putbyte(ord(pc24_value.valid));
+        ppufile.putbyte(ord(pc24_value.negative));
+        ppufile.putint64(int64(pc24_value.significand));
+        ppufile.putlongint(pc24_value.exponent);
+        ppufile.putbyte(ord(pc24_value.scaled));
+        ppufile.putint64(int64(pc24_value.scaled_significand));
+        ppufile.putlongint(pc24_value.scaled_exponent);
         ppufile.putint64(PInt64(@value_currency)^);
         ppufile.putasmsymbol(lab_real);
       end;
@@ -506,6 +524,7 @@ implementation
          n:=trealconstnode(inherited dogetcopy);
          n.typedef:=typedef;
          n.value_real:=value_real;
+         n.pc24_value:=pc24_value;
          n.value_currency:=value_currency;
          n.lab_real:=lab_real;
          dogetcopy:=n;
@@ -586,6 +605,15 @@ implementation
       begin
         docompare :=
           inherited docompare(p) and
+          (not (cs_legacy_pc24 in localswitches) or
+            ((pc24_value.valid=trealconstnode(p).pc24_value.valid) and
+             (pc24_value.negative=trealconstnode(p).pc24_value.negative) and
+             (pc24_value.significand=trealconstnode(p).pc24_value.significand) and
+             (pc24_value.exponent=trealconstnode(p).pc24_value.exponent) and
+             (pc24_value.scaled=trealconstnode(p).pc24_value.scaled) and
+             (not pc24_value.scaled or
+               ((pc24_value.scaled_significand=trealconstnode(p).pc24_value.scaled_significand) and
+                (pc24_value.scaled_exponent=trealconstnode(p).pc24_value.scaled_exponent))))) and
           { this should be always true }
           (trealconstnode(p).typedef.typ=floatdef) and (typedef.typ=floatdef) and
           (tfloatdef(typedef).floattype = tfloatdef(trealconstnode(p).typedef).floattype) and

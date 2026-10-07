@@ -61,14 +61,15 @@ implementation
 
   function tllvmaddnode.pass_1: tnode;
     var
-      exceptmode: ansistring;
+      exceptmode,roundmode: ansistring;
       intrname: string;
       iscompcurrency: boolean;
     begin
       result:=inherited pass_1;
       if not assigned(result) and
          is_fpu(left.resultdef) and
-         not(cs_opt_fastmath in current_settings.optimizerswitches) then
+         ((anf_pc24_lowered in addnodeflags) or
+          not(cs_opt_fastmath in current_settings.optimizerswitches)) then
         begin
           case nodetype of
             addn:
@@ -101,9 +102,13 @@ implementation
                   inserttypeconv_internal(right,s80floattype);
                 end;
               exceptmode:=llvm_constrainedexceptmodestring;
+              if anf_pc24_lowered in addnodeflags then
+                roundmode:='round.tonearest'
+              else
+                roundmode:='round.dynamic';
               result:=ccallnode.createintern(intrname,
                 ccallparanode.create(cstringconstnode.createpchar(ansistring2pchar(exceptmode),length(exceptmode),llvm_metadatatype),
-                  ccallparanode.create(cstringconstnode.createpchar(ansistring2pchar('round.dynamic'),length('round.dynamic'),llvm_metadatatype),
+                  ccallparanode.create(cstringconstnode.createpchar(ansistring2pchar(roundmode),length(roundmode),llvm_metadatatype),
                     ccallparanode.create(right,
                       ccallparanode.create(left,nil)
                     )

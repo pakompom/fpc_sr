@@ -2452,7 +2452,9 @@ const
         'i8086 force FAR calls', {cs_force_far_calls}
         'i8086 huge pointer arithmetic', {cs_hugeptr_arithmetic_normalization}
         'i8086 huge pointer comparison', {cs_hugeptr_comparison_normalization}
-        'enforce legacy ifend behaviour' {cs_legacyifend}
+        'enforce legacy ifend behaviour', {cs_legacyifend}
+        'hardware PC24 arithmetic', {cs_legacy_pc24}
+        'Delphi expression evaluation order' {cs_delphi_order}
        );
        { Switches which can be changed by a mode (fpc,tp7,delphi) }
        modeswitchname : array[tmodeswitch] of string[50] =
@@ -3123,6 +3125,7 @@ const
   );
 var
   proctypeoption  : tproctypeoption;
+  sourceproccalloption: tproccalloption;
   i     : longint;
   first : boolean;
 begin
@@ -3150,6 +3153,8 @@ begin
   writeln;
   proccalloption:=tproccalloption(ppufile.getbyte);
   writeln([space,'       CallOption : ',proccalloptionStr[proccalloption]]);
+  sourceproccalloption:=tproccalloption(ppufile.getbyte);
+  writeln([space,'  SourceCallOption : ',proccalloptionStr[sourceproccalloption]]);
   ppufile.getset(tppuset8(procoptions));
   if procoptions<>[] then
    begin
@@ -3855,30 +3860,32 @@ begin
                    write  ([space,'     RealType : ']);
                    readderef('',constdef.TypeRef);
                    write([space,'        Value : ']);
-                   if entryleft=sizeof(ppureal) then
+                   { Binary80 provenance follows the host-sized real value. }
+                   len:=entryleft-27;
+                   if len=sizeof(ppureal) then
                      begin
                        realvalue:=getrealsize(sizeof(ppureal));
                        constdef.VFloat:=realvalue;
                        system.str(realvalue,realstr);
                        writeln([realstr]);
                      end
-                   else if entryleft=sizeof(double) then
+                   else if len=sizeof(double) then
                      begin
                        doublevalue:=getrealsize(sizeof(double));
                        constdef.VFloat:=doublevalue;
                        system.str(doublevalue,realstr);
                        writeln([realstr]);
                      end
-                   else if entryleft=sizeof(single) then
+                   else if len=sizeof(single) then
                      begin
                        singlevalue:=getrealsize(sizeof(single));
                        constdef.VFloat:=singlevalue;
                        system.str(singlevalue,realstr);
                        writeln([realstr]);
                      end
-                   else if entryleft=10 then
+                   else if len=10 then
                      begin
-                       getdata(extended,entryleft);
+                       getdata(extended,len);
                        ss:=Real80bitToStr(extended,constdef.VFloat);
                        writeln(ss);
                      end
@@ -3887,6 +3894,13 @@ begin
                        realvalue:=0.0;
                        WriteError('Error reading real value');
                      end;
+                   writeln([space,' PC24 valid   : ',getbyte<>0]);
+                   writeln([space,' PC24 negative: ',getbyte<>0]);
+                   writeln([space,' PC24 mantissa: ',qword(getint64)]);
+                   writeln([space,' PC24 exponent: ',getlongint]);
+                   writeln([space,' PC24 scaled  : ',getbyte<>0]);
+                   writeln([space,' PC24 raw mant: ',qword(getint64)]);
+                   writeln([space,' PC24 raw exp : ',getlongint]);
                  end;
                constset :
                  begin
@@ -5489,4 +5503,3 @@ begin
     (has_more_infos or has_warnings) then
     Halt(2);
 end.
-

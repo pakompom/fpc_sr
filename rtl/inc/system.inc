@@ -501,6 +501,7 @@ end;
 {$I math.inc}
 { Include generic version }
 {$I genmath.inc}
+{$I pc24.inc}
 {$endif}
 
 {$i gencurr.inc}
@@ -858,7 +859,13 @@ end;
 
 function random(l: longint): longint;
 begin
+{$ifdef FPC_USE_PC24_RANDOM}
+  { Delphi's bounded RNG uses unsigned MUL and returns its high word, even
+    for a negative bound. }
+  random:=longint((qword(rand_next)*cardinal(l)) shr 32);
+{$else}
   random:=int64(rand_next)*l shr 32;
+{$endif}
 end;
 
 function random(l:int64):int64;
@@ -870,8 +877,21 @@ end;
 function random: extended;
 const
   c = 1.0/$10000/$10000;
+{$ifdef FPC_USE_PC24_RANDOM}
+var
+  exact: double;
+  rounded: single;
+{$endif}
 begin
+{$ifdef FPC_USE_PC24_RANDOM}
+  { The uint32 load and power-of-two scaling are exact in Double. Delphi's
+    PC24 arithmetic rounds that product once, including values rounding to 1. }
+  exact:=rand_next;
+  rounded:=exact*c;
+  random:=rounded;
+{$else}
   random:=rand_next*c;
+{$endif}
 end;
 {$endif}
 
@@ -2243,4 +2263,3 @@ begin
   CtrlBreakHandler := Handler;
 end;
 {$ENDIF FPC_HAS_SETCTRLBREAKHANDLER}
-

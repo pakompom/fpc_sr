@@ -178,7 +178,11 @@ interface
          cs_force_far_calls,
          cs_hugeptr_arithmetic_normalization,
          cs_hugeptr_comparison_normalization,
-         cs_legacyifend
+         cs_legacyifend,
+         { Explicit per-operation PC24 rounding for hardware floating point. }
+         cs_legacy_pc24,
+         { Delphi 2007 expression and argument evaluation order. }
+         cs_delphi_order
        );
        tlocalswitches = set of tlocalswitch;
 

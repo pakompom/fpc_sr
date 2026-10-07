@@ -56,7 +56,7 @@ implementation
        { common }
        cutils,
        { global }
-       globals,tokens,verbose,widestr,constexp,
+       globals,tokens,verbose,widestr,constexp,pc24const,
        systems,aasmdata,fmodule,compinnr,
        { symtable }
        symconst,symbase,symcpu,symcreat,defutil,defcmp,symtable,symutil,
@@ -135,6 +135,7 @@ implementation
                 new(pd);
                 pd^:=trealconstnode(p).value_real;
                 hp:=cconstsym.create_ptr(orgname,constreal,pd,p.resultdef);
+                hp.pc24_value:=pc24_named(trealconstnode(p).pc24_value);
              end;
            setconstn :
              begin

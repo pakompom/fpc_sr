@@ -311,6 +311,9 @@ interface
          resultdefderef : tderef;
          fileinfo      : tfileposinfo;
          localswitches : tlocalswitches;
+         { Source evaluation properties before expression lowering. }
+         delphi_demand: word;
+         delphi_demand_valid,delphi_extended,delphi_calllike: boolean;
          verbosity     : longint;
          optinfo : poptinfo;
          constructor create(t:tnodetype);
@@ -792,10 +795,14 @@ implementation
         { tnode fields }
         blocktype:=tblock_type(ppufile.getbyte);
         ppufile.getposinfo(fileinfo);
-        ppufile.getset(tppuset5(localswitches));
+        ppufile.getset(tppuset6(localswitches));
         verbosity:=ppufile.getlongint;
         ppufile.getderef(resultdefderef);
         ppufile.getset(tppuset2(flags));
+        delphi_demand:=ppufile.getword;
+        delphi_demand_valid:=ppufile.getbyte<>0;
+        delphi_extended:=ppufile.getbyte<>0;
+        delphi_calllike:=ppufile.getbyte<>0;
         { updated by firstpass }
         expectloc:=LOC_INVALID;
         { updated by secondpass }
@@ -807,10 +814,14 @@ implementation
       begin
         ppufile.putbyte(byte(blocktype));
         ppufile.putposinfo(fileinfo);
-        ppufile.putset(tppuset5(localswitches));
+        ppufile.putset(tppuset6(localswitches));
         ppufile.putlongint(verbosity);
         ppufile.putderef(resultdefderef);
         ppufile.putset(tppuset2(flags));
+        ppufile.putword(delphi_demand);
+        ppufile.putbyte(ord(delphi_demand_valid));
+        ppufile.putbyte(ord(delphi_extended));
+        ppufile.putbyte(ord(delphi_calllike));
       end;
 
 
@@ -1054,6 +1065,10 @@ implementation
          p.resultdef:=resultdef;
          p.fileinfo:=fileinfo;
          p.localswitches:=localswitches;
+         p.delphi_demand:=delphi_demand;
+         p.delphi_demand_valid:=delphi_demand_valid;
+         p.delphi_extended:=delphi_extended;
+         p.delphi_calllike:=delphi_calllike;
          p.verbosity:=verbosity;
 {         p.list:=list; }
          result:=p;
@@ -1501,4 +1516,3 @@ begin
   printfileinfo_address:=@dprintfileinfo;
   printnode_address:=@dprintnode;
 end.
-

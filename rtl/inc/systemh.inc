@@ -1260,6 +1260,7 @@ function PopCnt(Const AValue : QWord): QWord;[internproc:fpc_in_popcnt_x];
 {$ifndef FPUNONE}
 { float math routines }
 {$I mathh.inc}
+{$I pc24h.inc}
 {$endif}
 { currency math routines }
 {$I currh.inc}

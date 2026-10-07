@@ -76,6 +76,15 @@ implementation
             begin
               node_changed:=true;
               oldflags:=p.flags;
+              { Expression lowering retains the source operand demand through
+                removable internal type wrappers. }
+              if p.delphi_demand_valid and not hp.delphi_demand_valid then
+                begin
+                  hp.delphi_demand:=p.delphi_demand;
+                  hp.delphi_demand_valid:=true;
+                  hp.delphi_extended:=p.delphi_extended;
+                  hp.delphi_calllike:=p.delphi_calllike;
+                end;
               p.free;
               { switch to new node }
               p:=hp;

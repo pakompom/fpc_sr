@@ -275,12 +275,13 @@ implementation
 
     function tllvminlinenode.first_sqrt_real: tnode;
       var
-        exceptmode: ansistring;
+        exceptmode,roundmode: ansistring;
         intrinsic: string[40];
       begin
         if left.resultdef.typ<>floatdef then
           internalerror(2018121601);
-        if cs_opt_fastmath in current_settings.optimizerswitches then
+        if (cs_opt_fastmath in current_settings.optimizerswitches) and
+           not(inf_pc24_lowered in inlinenodeflags) then
           begin
             case tfloatdef(left.resultdef).floattype of
               s32real:
@@ -308,9 +309,13 @@ implementation
                 internalerror(2019122810);
             end;
             exceptmode:=llvm_constrainedexceptmodestring;
+            if inf_pc24_lowered in inlinenodeflags then
+              roundmode:='round.tonearest'
+            else
+              roundmode:='round.dynamic';
             result:=ccallnode.createintern(intrinsic,
               ccallparanode.create(cstringconstnode.createpchar(ansistring2pchar(exceptmode),length(exceptmode),llvm_metadatatype),
-                ccallparanode.create(cstringconstnode.createpchar(ansistring2pchar('round.dynamic'),length('round.dynamic'),llvm_metadatatype),
+                ccallparanode.create(cstringconstnode.createpchar(ansistring2pchar(roundmode),length(roundmode),llvm_metadatatype),
                   ccallparanode.create(left,nil)
                 )
               )

@@ -912,6 +912,13 @@ implementation
                if fwpd.forwarddef then
                  begin
                    forwardfound:=true;
+                   { An omitted implementation/interface convention inherits
+                     the source convention even when both target conventions
+                     have already normalized to the same value. }
+                   if currpd.source_proccalloption=pocall_none then
+                     currpd.source_proccalloption:=fwpd.source_proccalloption
+                   else if fwpd.source_proccalloption=pocall_none then
+                     fwpd.source_proccalloption:=currpd.source_proccalloption;
 
                    if not(m_repeat_forward in current_settings.modeswitches) and
                       (fwpd.proccalloption<>currpd.proccalloption) then

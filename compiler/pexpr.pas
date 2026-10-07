@@ -28,7 +28,7 @@ interface
     uses
       symtype,symdef,symbase,
       node,ncal,compinnr,
-      tokens,globtype,globals,constexp,
+      tokens,globtype,globals,constexp,pc24const,
       pgentype;
 
     type
@@ -1964,6 +1964,13 @@ implementation
           result:=crealconstnode.create(d,s64floattype)
         else
           result:=crealconstnode.create(d,pbestrealtype^);
+        if cs_legacy_pc24 in current_settings.localswitches then
+          begin
+            trealconstnode(result).pc24_value.valid:=
+              pc24_from_delphi_literal(s,trealconstnode(result).pc24_value);
+            if trealconstnode(result).pc24_value.valid then
+              trealconstnode(result).value_real:=pc24_to_extended(trealconstnode(result).pc24_value);
+          end;
         val(current_scanner.pattern,cur,code);
         if code=0 then
           trealconstnode(result).value_currency:=cur;
@@ -4096,8 +4103,15 @@ implementation
                        end
                      else
                        begin
-                          consume(_INTCONST);
                           p1:=crealconstnode.create(d,pbestrealtype^);
+                          if cs_legacy_pc24 in current_settings.localswitches then
+                            begin
+                              trealconstnode(p1).pc24_value.valid:=
+                                pc24_from_delphi_literal(current_scanner.pattern,trealconstnode(p1).pc24_value);
+                              if trealconstnode(p1).pc24_value.valid then
+                                trealconstnode(p1).value_real:=pc24_to_extended(trealconstnode(p1).pc24_value);
+                            end;
+                          consume(_INTCONST);
                        end;
                    end
                  else
@@ -4311,6 +4325,8 @@ implementation
                           else if tbinarynode(p1).left.nodetype=realconstn then
                             begin
                               trealconstnode(tbinarynode(p1).left).value_real:=-trealconstnode(tbinarynode(p1).left).value_real;
+                              trealconstnode(tbinarynode(p1).left).pc24_value.negative:=
+                                not trealconstnode(tbinarynode(p1).left).pc24_value.negative;
                               trealconstnode(tbinarynode(p1).left).value_currency:=-trealconstnode(tbinarynode(p1).left).value_currency;
                               p1:=cunaryminusnode.create(p1);
                             end

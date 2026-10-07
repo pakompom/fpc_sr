@@ -66,7 +66,8 @@ interface
         'cleanup', { exception cleanup/finally }
         'invalid1', { la_x_to_inttoptr }
         'invalid2', { la_ptrtoint_to_x }
-        'asm' { la_asmblock }
+        'asm', { la_asmblock }
+        'ehbarrier' { la_ehbarrier }
       );
 
       llvm_cond2str : array[topcmp] of ansistring = ('',

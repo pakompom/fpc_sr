@@ -593,6 +593,14 @@ implementation
              owner.writer.AsmWrite(llvmencodetypedecl(taillvm(hp).oper[0]^.def));
              done:=true;
            end;
+        la_ehbarrier:
+          begin
+            owner.writer.AsmWrite('invoke void asm sideeffect unwind "adr x30, 0f\0A0:", "~{lr},~{memory},~{fpsr},~{flags}"() to ');
+            owner.writer.AsmWrite(getopstr(taillvm(hp).oper[0]^,false));
+            owner.writer.AsmWrite(' unwind ');
+            owner.writer.AsmWrite(getopstr(taillvm(hp).oper[1]^,false));
+            done:=true;
+          end;
         la_asmblock:
           begin
             owner.writer.AsmWrite('call void asm sideeffect "');
@@ -632,13 +640,30 @@ implementation
             owner.writer.AsmWrite(tmpstr);
             owner.writer.AsmWrite(',');
           end;
+        la_atomicrmw:
+          begin
+            owner.writer.AsmWrite(getopstr(taillvm(hp).oper[0]^,false)+' = atomicrmw ');
+            if taillvm(hp).oper[4]^.val<>0 then
+              owner.writer.AsmWrite('sub ')
+            else
+              owner.writer.AsmWrite('add ');
+            owner.writer.AsmWrite(llvmencodetypename(cpointerdef.getreusable(taillvm(hp).oper[1]^.def))+' ');
+            owner.writer.AsmWrite(getregisterstring(taillvm(hp).oper[2]^.reg)+', ');
+            owner.writer.AsmWrite(llvmencodetypename(taillvm(hp).oper[1]^.def)+' ');
+            owner.writer.AsmWrite(getregisterstring(taillvm(hp).oper[3]^.reg));
+            case tllvmatomicordering(taillvm(hp).oper[5]^.val) of
+              lao_monotonic: owner.writer.AsmWrite(' monotonic');
+              lao_seq_cst: owner.writer.AsmWrite(' seq_cst');
+              else internalerror(2026100801);
+            end;
+            done:=true;
+          end;
         la_ret, la_br, la_switch, la_indirectbr,
         la_resume,
         la_unreachable,
         la_store,
         la_fence,
         la_cmpxchg,
-        la_atomicrmw,
         la_catch,
         la_filter,
         la_cleanup:

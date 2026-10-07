@@ -153,5 +153,9 @@ const
 
    { SSE }
 
+{ Private RTL reference-count operations }
+   fpc_in_refcount_inc     = 1104;
+   fpc_in_refcount_dec     = 1105;
+
    fpc_in_cpu_first        = 10000;
    fpc_in_x86_mm_first     = 11000;

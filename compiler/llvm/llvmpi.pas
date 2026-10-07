@@ -60,7 +60,7 @@ implementation
       symconst,symtype,symdef,symsym,symtable,defutil,llvmdef,
       pass_2,
       parabase,paramgr,
-      cgbase,cgutils,cgexcept,tgobj,hlcgobj,llvmbase;
+      cgbase,cgutils,cgexcept,tgobj,hlcgobj,llvmbase,llvminfo;
 
     {*****************************************************************************
                          tllvmexceptionstatehandler
@@ -81,9 +81,36 @@ implementation
         class procedure catch_all_start(list: TAsmList); override;
         class procedure catch_all_end(list: TAsmList); override;
        protected
+        class procedure emit_exception_boundary(list: TAsmList);
         class procedure begin_catch_internal(list: TAsmList; excepttype: tobjectdef; nextonlabel: tasmlabel; add_catch: boolean; out exceptlocdef: tdef; out exceptlocreg: tregister);
         class procedure catch_all_start_internal(list: TAsmList; add_catch: boolean);
       end;
+
+
+      class procedure tllvmexceptionstatehandler.emit_exception_boundary(list: TAsmList);
+{$ifdef aarch64}
+        var
+          nextinslab: TAsmLabel;
+{$endif}
+        begin
+{$ifdef aarch64}
+          if current_settings.llvmversion>=llvmver_17_0 then
+            begin
+              { Keep an opaque unwind edge and memory barrier without a call.
+                AArch64 signal trampolines enter the error handler with LR
+                unchanged. Seed LR inside this region, just as the old dummy
+                call did; its explicit clobber preserves the caller's LR.
+                The personality looks up the saved IP minus one, so the
+                address immediately after ADR remains inside the LSDA range. }
+              current_asmdata.getjumplabel(nextinslab);
+              list.concat(taillvm.ehbarrier(nextinslab,
+                tllvmprocinfo(current_procinfo).CurrExceptLabel));
+              hlcg.a_label(list,nextinslab);
+              exit;
+            end;
+{$endif}
+          hlcg.g_call_system_proc(list,'FPC_DUMMYPOTENTIALRAISE',[],nil).resetiftemp;
+        end;
 
 
       class procedure tllvmexceptionstatehandler.get_exception_temps(list: TAsmList; var t: texceptiontemps);
@@ -131,10 +158,10 @@ implementation
             as otherwise we get an error; we can also generate exceptions from
             invalid memory accesses and the like, but LLVM cannot model that
             --
-            We cheat for now by adding an invoke to a dummy routine at the start and at
-            the end of the try-block. That will not magically fix the state
+            We keep an opaque unwind edge at the start and at the end of
+            the try-block. That will not magically fix the state
             of all variables when the exception gets caught though. }
-          hlcg.g_call_system_proc(list,'FPC_DUMMYPOTENTIALRAISE',[],nil).resetiftemp;
+          emit_exception_boundary(list);
         end;
 
 
@@ -176,12 +203,11 @@ implementation
           reg: tregister;
         begin
           { llvm does not allow creating a landing pad if there are no invokes in
-            the try block -> create a call to a dummy routine that cannot be
-            analysed by llvm and that supposedly may raise an exception. Has to
+            the try block -> emit an opaque boundary that may unwind. Has to
             be combined with marking stores inside try blocks as volatile and the
             loads afterwards as well in order to guarantee correct optimizations
             in case an exception gets triggered inside a try-block though }
-          hlcg.g_call_system_proc(list,'FPC_DUMMYPOTENTIALRAISE',[],nil).resetiftemp;
+          emit_exception_boundary(list);
 
           { record that no exception happened in the reason buf }
           reg:=hlcg.getintregister(list,ossinttype);

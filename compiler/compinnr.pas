@@ -201,7 +201,10 @@ type
      in_atomic_inc       = 1100,
      in_atomic_dec       = 1101,
      in_atomic_xchg      = 1102,
-     in_atomic_cmp_xchg  = 1103
+     in_atomic_cmp_xchg  = 1103,
+     { private RTL reference-count operations }
+     in_refcount_inc     = 1104,
+     in_refcount_dec     = 1105
 
 {$if defined(X86)}
      ,

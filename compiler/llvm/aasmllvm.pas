@@ -61,6 +61,7 @@ interface
         constructor op_reg_size_reg(op:tllvmop;dst:tregister;size:tdef;src:tregister);
         { e.g. dst = add size src1, src2 }
         constructor op_reg_size_reg_reg(op:tllvmop;dst:tregister;size:tdef;src1,src2:tregister);
+        constructor atomicrmw_reg_size_reg_reg(dst: tregister; size: tdef; address,value: tregister; subtract: boolean; ordering: tllvmatomicordering);
         { e.g. dst = shl size src1, 1 ( = src1 shl 1) }
         constructor op_reg_size_reg_const(op:tllvmop;dst:tregister;size:tdef;src1:tregister;src2:int64);
         { e.g. dst = sub size 0, src2 ( = 0 - src2) }
@@ -135,6 +136,7 @@ interface
 
         { inline function-level assembler code and parameters }
         constructor asm_paras(asmlist: tasmlist; paras: tfplist);
+        constructor ehbarrier(retlab, exceptlab: TAsmLabel);
 
         procedure loadoper(opidx: longint; o: toper); override;
         procedure clearop(opidx: longint); override;
@@ -617,10 +619,10 @@ implementation
           la_ret, la_br, la_switch, la_indirectbr,
           la_resume,
           la_unreachable,
+          la_ehbarrier,
           la_store,
           la_fence,
-          la_cmpxchg,
-          la_atomicrmw:
+          la_cmpxchg:
             begin
               { instructions that never have a result }
               result:=operand_read;
@@ -640,7 +642,7 @@ implementation
           la_icmp, la_fcmp,
           la_phi, la_select,
           la_va_arg, la_landingpad,
-          la_freeze:
+          la_freeze, la_atomicrmw:
             begin
               if opnr=0 then
                 result:=operand_write
@@ -759,9 +761,15 @@ implementation
                   internalerror(2013110111);
               end;
             end;
-          la_fence,
-          la_cmpxchg,
           la_atomicrmw:
+            case opnr of
+              0,3: result:=oper[1]^.def;
+              2: result:=cpointerdef.getreusable(oper[1]^.def);
+              else
+                internalerror(2026100702);
+            end;
+          la_fence,
+          la_cmpxchg:
             begin
               internalerror(2013110610);
             end;
@@ -878,6 +886,19 @@ implementation
         loaddef(1,size);
         loadreg(2,src1);
         loadreg(3,src2);
+      end;
+
+
+    constructor taillvm.atomicrmw_reg_size_reg_reg(dst: tregister; size: tdef; address,value: tregister; subtract: boolean; ordering: tllvmatomicordering);
+      begin
+        create_llvm(la_atomicrmw);
+        ops:=6;
+        loadreg(0,dst);
+        loaddef(1,size);
+        loadreg(2,address);
+        loadreg(3,value);
+        loadconst(4,ord(subtract));
+        loadconst(5,ord(ordering));
       end;
 
     { %dst = shl i32 %reg, 1 (= %reg shl 1) }
@@ -1308,6 +1329,15 @@ implementation
         ops:=2;
         loadasmlist(0,asmlist);
         loadparas(1,paras);
+      end;
+
+
+    constructor taillvm.ehbarrier(retlab, exceptlab: TAsmLabel);
+      begin
+        create_llvm(la_ehbarrier);
+        ops:=2;
+        loadsymbol(0,retlab,0);
+        loadsymbol(1,exceptlab,0);
       end;
 
 

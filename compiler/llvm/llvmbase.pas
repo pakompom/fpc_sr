@@ -37,6 +37,8 @@ interface
 *****************************************************************************}
 
   type
+    tllvmatomicordering = (lao_monotonic,lao_seq_cst);
+
     tllvmop = (la_none,
       { terminator instructions }
       la_ret, la_br, la_switch, la_indirectbr,
@@ -74,7 +76,8 @@ interface
       la_cleanup, { cleanup clause of a landingpad (finally) }
       la_x_to_inttoptr, { have to convert something first to int before it can be converted to a pointer }
       la_ptrtoint_to_x, { have to convert a pointer first to int before it can be converted to something else }
-      la_asmblock
+      la_asmblock,
+      la_ehbarrier { opaque exception-region boundary without a function call }
     );
 
     tllvmvalueextension = (lve_none, lve_zeroext, lve_signext);
@@ -82,7 +85,7 @@ interface
   const
     llvmterminatoropcodes = [la_ret, la_br, la_switch, la_indirectbr,
       la_invoke, la_resume,
-      la_unreachable];
+      la_unreachable, la_ehbarrier];
 
     llvmvalueextension2str: array[tllvmvalueextension] of TSymStr = ('',
       ' zeroext',' signext');

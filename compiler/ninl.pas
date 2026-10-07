@@ -3443,6 +3443,11 @@ implementation
          source_demand: word;
       begin
         result:=nil;
+        { A one-argument internproc supplies the operand directly. Reuse the
+          atomic operand representation for the private RTL intrinsics. }
+        if ((inlinenumber=in_refcount_inc) or (inlinenumber=in_refcount_dec)) and
+           assigned(left) and (left.nodetype<>callparan) then
+          left:=ccallparanode.create(left,nil);
         { when handling writeln "left" contains no valid address }
         if assigned(left) then
           begin
@@ -4310,6 +4315,8 @@ implementation
                 end;
               in_atomic_dec,
               in_atomic_inc,
+              in_refcount_inc,
+              in_refcount_dec,
               in_atomic_xchg,
               in_atomic_cmp_xchg:
                 begin
@@ -4966,6 +4973,8 @@ implementation
            result:=first_minmax;
          in_atomic_inc,
          in_atomic_dec,
+         in_refcount_inc,
+         in_refcount_dec,
          in_atomic_xchg,
          in_atomic_cmp_xchg:
            result:=first_atomic;
@@ -6279,6 +6288,8 @@ implementation
          case inlinenumber of
            in_atomic_inc,
            in_atomic_dec,
+           in_refcount_inc,
+           in_refcount_dec,
            in_atomic_xchg,
            in_atomic_cmp_xchg:
              result:=true;
@@ -6377,12 +6388,12 @@ implementation
          { by default we redirect to the corresponding compilerprocs }
          name:='fpc_atomic_';
          case inlinenumber of
-           in_atomic_inc:
+           in_atomic_inc,in_refcount_inc:
              if assigned(tcallparanode(left).right) then
                name:=name+'add'
              else
                name:=name+'inc';
-           in_atomic_dec:
+           in_atomic_dec,in_refcount_dec:
              if assigned(tcallparanode(left).right) then
                name:=name+'sub'
              else

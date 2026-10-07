@@ -40,6 +40,15 @@ function llvm_ctpop(src: UInt16): UInt16; external name 'llvm.ctpop.i16';
 function llvm_ctpop(src: UInt32): UInt32; external name 'llvm.ctpop.i32';
 function llvm_ctpop(src: UInt64): UInt64; external name 'llvm.ctpop.i64';
 
+function llvm_fabs_f32(val: single): single; compilerproc; external name 'llvm.fabs.f32';
+function llvm_fabs_f64(val: double): double; compilerproc; external name 'llvm.fabs.f64';
+{$ifdef SUPPORT_EXTENDED}
+function llvm_fabs_f80(val: cextended): cextended; compilerproc; external name 'llvm.fabs.x86_fp80';
+{$endif}
+{$ifdef SUPPORT_FLOAT128}
+function llvm_fabs_f128(val: float128): float128; compilerproc; external name 'llvm.fabs.f128';
+{$endif}
+
 function llvm_sqrt_f32(val: single): single; compilerproc; external name 'llvm.sqrt.f32';
 function llvm_experimental_constrained_sqrt(val: single; rounding, exceptions: LLVMMetadata): single; external name 'llvm.experimental.constrained.sqrt.f32';
 function llvm_sqrt_f64(val: double): double; compilerproc; external name 'llvm.sqrt.f64';

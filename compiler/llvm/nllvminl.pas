@@ -37,6 +37,7 @@ interface
 
         function first_get_frame: tnode; override;
         function first_abs_real: tnode; override;
+        function first_atomic: tnode; override;
         function first_bitscan: tnode; override;
         function first_fma: tnode; override;
         function first_sqr_real: tnode; override;
@@ -46,6 +47,7 @@ interface
         function first_int_real: tnode; override;
         function first_popcnt: tnode; override;
        public
+        procedure pass_generate_code_cpu; override;
         procedure second_length; override;
         procedure second_high; override;
         procedure second_sqr_real; override;
@@ -58,13 +60,101 @@ implementation
      uses
        verbose,globals,globtype,constexp,cutils,
        aasmbase, aasmdata,
-       symconst,symtype,symdef,defutil,
+       symconst,symtype,symdef,defutil,symtable,
        compinnr,
-       nutils,nadd,nbas,ncal,ncnv,ncon,nflw,ninl,nld,nmat,nmem,
+       nutils,nadd,nbas,ncal,ncnv,ncon,nflw,ninl,nld,nmat,nmem,htypechk,
        pass_2,
-       cgbase,cgutils,tgobj,hlcgobj,
+       cgbase,cgutils,tgobj,hlcgobj,paramgr,parabase,
        cpubase,
        llvmbase,llvminfo,aasmllvm,aasmllvmmetadata;
+
+    function tllvminlinenode.first_atomic: tnode;
+      begin
+{$if defined(aarch64) or defined(x86_64)}
+        if ((inlinenumber<>in_atomic_inc) and (inlinenumber<>in_atomic_dec) and
+            (inlinenumber<>in_refcount_inc) and (inlinenumber<>in_refcount_dec)) or
+           assigned(tcallparanode(left).right) or
+           not is_integer(resultdef) or not(resultdef.size in [1,2,4,8]) then
+          exit(inherited first_atomic);
+        make_not_regable(tcallparanode(left).left,[ra_addr_regable]);
+        expectloc:=LOC_REGISTER;
+        result:=nil;
+{$else}
+        { Older ARM targets need the RTL's kuser/lock helpers. LLVM may emit
+          external __sync_* calls that are not part of the Pascal runtime. }
+        result:=inherited first_atomic;
+{$endif}
+      end;
+
+
+    procedure tllvminlinenode.pass_generate_code_cpu;
+      var
+        target: tnode;
+        address,increment,previous: tregister;
+        op: topcg;
+        helpername: TIDString;
+        pd: tprocdef;
+        argument,callresult: tcgpara;
+        subtract: boolean;
+        ordering: tllvmatomicordering;
+      begin
+        if ((inlinenumber<>in_atomic_inc) and (inlinenumber<>in_atomic_dec) and
+            (inlinenumber<>in_refcount_inc) and (inlinenumber<>in_refcount_dec)) then
+          begin
+            inherited;
+            exit;
+          end;
+        subtract:=(inlinenumber=in_atomic_dec) or (inlinenumber=in_refcount_dec);
+        if (inlinenumber=in_refcount_inc) or (inlinenumber=in_refcount_dec) then
+          { Match the RTL's relaxed reference-count operations without
+            weakening the public atomic intrinsics. }
+          ordering:=lao_monotonic
+        else
+          ordering:=lao_seq_cst;
+        target:=tcallparanode(left).left;
+        secondpass(target);
+        if not(target.location.loc in [LOC_REFERENCE,LOC_CREFERENCE]) then
+          internalerror(2026100701);
+        address:=hlcg.getaddressregister(current_asmdata.CurrAsmList,
+          cpointerdef.getreusable(resultdef));
+        hlcg.a_loadaddr_ref_reg(current_asmdata.CurrAsmList,resultdef,
+          cpointerdef.getreusable(resultdef),target.location.reference,address);
+        location_reset(location,LOC_REGISTER,def_cgsize(resultdef));
+        location.register:=hlcg.getintregister(current_asmdata.CurrAsmList,resultdef);
+        if (target.location.reference.alignment<resultdef.size) or
+           (target.location.reference.volatility<>[]) then
+          begin
+            { Keep the existing helper for unaligned or explicitly volatile
+              storage; this atomicrmw fast path assumes natural alignment. }
+            if subtract then
+              helpername:='fpc_atomic_dec_'
+            else
+              helpername:='fpc_atomic_inc_';
+            pd:=search_system_proc(helpername+tostr(resultdef.size*8));
+            argument.init;
+            paramanager.getcgtempparaloc(current_asmdata.CurrAsmList,pd,1,argument);
+            hlcg.a_load_reg_cgpara(current_asmdata.CurrAsmList,
+              cpointerdef.getreusable(resultdef),address,argument);
+            paramanager.freecgpara(current_asmdata.CurrAsmList,argument);
+            callresult:=hlcg.g_call_system_proc(current_asmdata.CurrAsmList,pd,[@argument],nil);
+            hlcg.gen_load_cgpara_loc(current_asmdata.CurrAsmList,resultdef,callresult,location,false);
+            callresult.resetiftemp;
+            callresult.done;
+            argument.done;
+            exit;
+          end;
+        increment:=hlcg.getintregister(current_asmdata.CurrAsmList,resultdef);
+        hlcg.a_load_const_reg(current_asmdata.CurrAsmList,resultdef,1,increment);
+        previous:=hlcg.getintregister(current_asmdata.CurrAsmList,resultdef);
+        current_asmdata.CurrAsmList.concat(taillvm.atomicrmw_reg_size_reg_reg(
+          previous,resultdef,address,increment,subtract,ordering));
+        if subtract then
+          op:=OP_SUB
+        else
+          op:=OP_ADD;
+        hlcg.a_op_const_reg_reg(current_asmdata.CurrAsmList,op,resultdef,1,
+          previous,location.register);
+      end;
 
      procedure tllvminlinenode.maybe_remove_round_trunc_typeconv;
        var
@@ -107,51 +197,31 @@ implementation
 
     function tllvminlinenode.first_abs_real: tnode;
       var
-        lefttemp,
-        resulttemp: ttempcreatenode;
-        stat: tstatementnode;
+        argument: pnode;
+        intrinsic: string[20];
       begin
-        result:=internalstatements(stat);
-        lefttemp:=ctempcreatenode.create(left.resultdef,left.resultdef.size,tt_persistent,true);
-        { assigned twice -> will be spilled if put in register }
-        resulttemp:=ctempcreatenode.create(resultdef,resultdef.size,tt_persistent,false);
-
-        addstatement(stat,lefttemp);
-        addstatement(stat,resulttemp);
-
-        { lefttemp:=left }
-        addstatement(stat,
-          cassignmentnode.create(ctemprefnode.create(lefttemp),left)
-        );
-
-        { if lefttemp>=0 then
-            resulttemp:=lefttemp
+        if left.nodetype=callparan then
+          argument:=@tcallparanode(left).left
+        else
+          argument:=@left;
+        case tfloatdef(argument^.resultdef).floattype of
+          s32real:
+            intrinsic:='llvm_fabs_f32';
+          s64real:
+            intrinsic:='llvm_fabs_f64';
+          s80real,sc80real:
+            intrinsic:='llvm_fabs_f80';
+          s128real:
+            intrinsic:='llvm_fabs_f128';
           else
-            resulttemp:=-lefttemp
-        }
-        addstatement(stat,
-          cifnode.create(
-            caddnode.create(
-              gten,
-              ctemprefnode.create(lefttemp),
-              crealconstnode.create(0.0,left.resultdef)
-            ),
-            cassignmentnode.create(
-              ctemprefnode.create(resulttemp),
-              ctemprefnode.create(lefttemp)
-            ),
-            cassignmentnode.create(
-              ctemprefnode.create(resulttemp),
-              cunaryminusnode.create(ctemprefnode.create(lefttemp))
-            )
-          )
-        );
-        addstatement(stat,ctempdeletenode.create(lefttemp));
-        addstatement(stat,ctempdeletenode.create_normal_temp(resulttemp));
-        { return resulttemp }
-        addstatement(stat,ctemprefnode.create(resulttemp));
-        { reused }
-        left:=nil;
+            internalerror(2026100901);
+        end;
+        { Abs only clears the sign bit: it does not round, quiet NaNs, or raise
+          floating-point exceptions. A comparison/negation also preserves -0
+          and may raise invalid for a signaling NaN. }
+        result:=ccallnode.createintern(intrinsic,
+          ccallparanode.create(argument^,nil));
+        argument^:=nil;
       end;
 
 

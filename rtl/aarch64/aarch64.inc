@@ -217,7 +217,23 @@ Function Sptr : Pointer;assembler; nostackframe;
 
 { perform a thread-safe inc/dec }
 
+{$ifdef CPULLVM}
+{ Implementation-only intrinsics retain the ordering of the assembly below.
+  Public AtomicIncrement/AtomicDecrement have their own stronger lowering. }
+function fpc_refcount_increment(var l: longint): longint; [internproc:fpc_in_refcount_inc];
+function fpc_refcount_increment(var l: int64): int64; [internproc:fpc_in_refcount_inc];
+function fpc_refcount_decrement(var l: longint): longint; [internproc:fpc_in_refcount_dec];
+function fpc_refcount_decrement(var l: int64): int64; [internproc:fpc_in_refcount_dec];
+{$endif CPULLVM}
+
 {$define FPC_SYSTEM_HAS_DECLOCKED_LONGINT}
+{$ifdef CPULLVM}
+  { Let LLVM inline reference-count updates using its atomic instructions. }
+function declocked(var l : longint) : boolean; inline;
+  begin
+    result:=fpc_refcount_decrement(l)=0;
+  end;
+{$else}
 function declocked(var l : longint) : boolean;assembler;nostackframe;
   { input:  address of l in x0                                      }
   { output: boolean indicating whether l is zero after decrementing }
@@ -236,8 +252,15 @@ function declocked(var l : longint) : boolean;assembler;nostackframe;
     cset   w0, eq
   {$endif CPUAARCH64_HAS_LSE}
   end;
+{$endif CPULLVM}
 
 {$define FPC_SYSTEM_HAS_INCLOCKED_LONGINT}
+{$ifdef CPULLVM}
+procedure inclocked(var l : longint); inline;
+  begin
+    fpc_refcount_increment(l);
+  end;
+{$else}
 procedure inclocked(var l : longint);assembler;nostackframe;
   asm
   {$ifdef CPUAARCH64_HAS_LSE}
@@ -251,9 +274,16 @@ procedure inclocked(var l : longint);assembler;nostackframe;
     cbnz   w2,.LIncLockedLoop
   {$endif CPUAARCH64_HAS_LSE}
   end;
+{$endif CPULLVM}
 
 
 {$define FPC_SYSTEM_HAS_DECLOCKED_INT64}
+{$ifdef CPULLVM}
+function declocked(var l : int64) : boolean; inline;
+  begin
+    result:=fpc_refcount_decrement(l)=0;
+  end;
+{$else}
 function declocked(var l : int64) : boolean;assembler;nostackframe;
   { input:  address of l in x0                                      }
   { output: boolean indicating whether l is zero after decrementing }
@@ -272,9 +302,16 @@ function declocked(var l : int64) : boolean;assembler;nostackframe;
     cset   w0, eq
   {$endif CPUAARCH64_HAS_LSE}
   end;
+{$endif CPULLVM}
 
 
 {$define FPC_SYSTEM_HAS_INCLOCKED_INT64}
+{$ifdef CPULLVM}
+procedure inclocked(var l : int64); inline;
+  begin
+    fpc_refcount_increment(l);
+  end;
+{$else}
 procedure inclocked(var l : int64);assembler;nostackframe;
   asm
   {$ifdef CPUAARCH64_HAS_LSE}
@@ -288,6 +325,7 @@ procedure inclocked(var l : int64);assembler;nostackframe;
     cbnz   w2,.LIncLockedLoop
   {$endif CPUAARCH64_HAS_LSE}
   end;
+{$endif CPULLVM}
 
 
 {$ifdef VER3_2}

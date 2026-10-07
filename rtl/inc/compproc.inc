@@ -703,7 +703,7 @@ function fpc_trunc_real(d : ValReal) : int64;compilerproc;
 {$endif}
 
 {$ifdef FPC_HAS_FEATURE_CLASSES}
-function fpc_do_is(aclass : tclass;aobject : tobject) : boolean; compilerproc;
+function fpc_do_is(aclass : tclass;aobject : tobject) : boolean; compilerproc; {$ifdef SYSTEMINLINE}inline;{$endif}
 function fpc_do_as(aclass : tclass;aobject : tobject): tobject; compilerproc;
 procedure fpc_intf_decr_ref(var i: pointer); compilerproc;
 procedure fpc_intf_incr_ref(i: pointer); compilerproc;

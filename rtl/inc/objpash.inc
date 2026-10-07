@@ -297,7 +297,7 @@
           class function ClassNameIs(const name : ShortString) : boolean;
           class function ClassParent : tclass;{$ifdef SYSTEMINLINE}inline;{$endif}
           class function InstanceSize : SizeInt;// {$ifdef SYSTEMINLINE}inline;{$endif}
-          class function InheritsFrom(aclass : tclass) : boolean;
+          class function InheritsFrom(aclass : tclass) : boolean; {$ifdef SYSTEMINLINE}inline;{$endif}
           class function StringMessageTable : pstringmessagetable;
 
           class function MethodAddress(const name : shortstring) : codepointer;

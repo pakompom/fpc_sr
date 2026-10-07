@@ -1866,6 +1866,13 @@ implementation
          end;
 
        function heuristics_favors_autoinlining(code: tnode): boolean;
+{$ifdef LLVM}
+         const
+           maxComplexity = 48;
+{$else LLVM}
+         const
+           maxComplexity = 25;
+{$endif LLVM}
          var
            complexityAvail : integer;
          begin
@@ -1876,10 +1883,18 @@ implementation
              a smaller and complexer tree as well: so we use the sum of
              both measures here }
 
-           { This is a shortcutted version of
-             "result:=node_count(code)+node_complexity(code)<=25". }
-           complexityAvail:=25-node_complexity(code);
+           complexityAvail:=maxComplexity-node_complexity(code);
+{$ifdef LLVM}
+           { LLVM promotes scalar locals and record fields after inlining.
+             Counting statement scaffolding as well as operation complexity
+             excludes even small leaves, such as a squared point distance.
+             Keep a bounded weighted tree budget. The existing complexity
+             check still rejects procedure calls and structured control flow. }
+           result:=(complexityAvail>0) and
+             (node_count_weighted(code,complexityAvail+1)<=dword(complexityAvail));
+{$else LLVM}
            result:=(complexityAvail>0) and (node_count(code,complexityAvail+1)<=dword(complexityAvail));
+{$endif LLVM}
          end;
 
       var

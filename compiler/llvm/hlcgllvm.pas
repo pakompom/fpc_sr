@@ -99,6 +99,8 @@ uses
 
       procedure g_concatcopy(list : TAsmList;size: tdef; const source,dest : treference);override;
 
+      procedure g_finalize(list: TAsmList; t: tdef; const ref: treference); override;
+
       procedure g_undefined_ok(list: TAsmList; size: tdef; reg: tregister); override;
 
       procedure a_loadfpu_ref_reg(list: TAsmList; fromsize, tosize: tdef; const ref: treference; reg: tregister); override;
@@ -1351,6 +1353,28 @@ implementation
   procedure thlcgllvm.g_unreachable(list: TAsmList);
     begin
       list.Concat(taillvm.op_none(la_unreachable));
+    end;
+
+
+  procedure thlcgllvm.g_finalize(list: TAsmList; t: tdef; const ref: treference);
+    var
+      value: tregister;
+      skip: tasmlabel;
+    begin
+      if is_ansistring(t) or is_unicodestring(t) then
+        begin
+          { These RTL finalizers do nothing for nil. Expose that fast path so
+            LLVM can discard cleanup of unused managed temporaries without
+            needing the RTL implementation or changing exception handling. }
+          current_asmdata.getjumplabel(skip);
+          value:=getaddressregister(list,voidpointertype);
+          a_load_ref_reg(list,t,voidpointertype,ref,value);
+          a_cmp_const_reg_label(list,voidpointertype,OC_EQ,0,value,skip);
+          inherited g_finalize(list,t,ref);
+          a_label(list,skip);
+        end
+      else
+        inherited g_finalize(list,t,ref);
     end;
 
 

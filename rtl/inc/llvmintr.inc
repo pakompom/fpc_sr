@@ -53,6 +53,11 @@ function llvm_sqrt_f128(val: float128): float128; compilerproc; external name 'l
 function llvm_experimental_constrained_sqrt(val: float128; rounding, exceptions: LLVMMetadata): float128; external name 'llvm.experimental.constrained.sqrt.f128';
 {$endif}
 
+{ Constrained scalar rounding keeps the runtime floating-point environment. }
+function llvm_experimental_constrained_lrint_i64_f64(val: double; rounding, exceptions: LLVMMetadata): int64; compilerproc; external name 'llvm.experimental.constrained.lrint.i64.f64';
+function llvm_experimental_constrained_fptosi_i64_f64(val: double; exceptions: LLVMMetadata): int64; compilerproc; external name 'llvm.experimental.constrained.fptosi.i64.f64';
+function llvm_experimental_constrained_trunc_f64(val: double; exceptions: LLVMMetadata): double; compilerproc; external name 'llvm.experimental.constrained.trunc.f64';
+
 function llvm_fma_f32(a, b, c: single): single; compilerproc; external name 'llvm.fma.f32';
 function llvm_experimental_constrained_fma(a, b, c: single; rounding, exceptions: LLVMMetadata): single; external name 'llvm.experimental.constrained.fma.f32';
 function llvm_fma_f64(a, b, c: double): double; compilerproc; external name 'llvm.fma.f64';

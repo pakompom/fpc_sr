@@ -102,9 +102,8 @@ interface
 
     function llvmconvop(var fromsize, tosize: tdef; inregs: boolean): tllvmop;
 
-    { mangle a global identifier so that it's recognised by LLVM as a global
-      (in the sense of module-global) label and so that it won't mangle the
-      name further according to platform conventions (we already did that) }
+    { encode a module-global identifier while preserving its object spelling;
+      let LLVM restore an ordinary Darwin prefix, and escape exact names }
     function llvmmangledname(const s: TSymStr): TSymStr;
 
     { convert a parameter attribute to a string. Depending on the target
@@ -270,7 +269,35 @@ implementation
 
 
   function llvmmangledname(const s: TSymStr): TSymStr;
+    var
+      namestart: longint;
+      logicalname: TSymStr;
     begin
+      { Darwin's ordinary C prefix is added by LLVM. Expose the logical name
+        so LLVM can recognize library functions, while preserving the exact
+        object spelling. Keep literal names and the reserved LLVM namespace
+        escaped. All declarations, references and aliases use this helper. }
+      if (target_info.system in systems_darwin) and
+         (target_info.Cprefix='_') then
+        begin
+          if copy(s,1,1)='"' then
+            namestart:=2
+          else
+            namestart:=1;
+          if (copy(s,namestart,1)='_') and
+             (copy(s,namestart+1,1)<>'') and
+             (copy(s,namestart+1,1)<>'"') and
+             (copy(s,namestart+1,5)<>'llvm.') then
+            begin
+              logicalname:=s;
+              delete(logicalname,namestart,1);
+              if namestart=2 then
+                result:='@'+logicalname
+              else
+                result:='@"'+logicalname+'"';
+              exit;
+            end;
+        end;
       if copy(s,1,length('llvm.'))<>'llvm.' then
         if s[1]<>'"' then
           result:='@"\01'+s+'"'

@@ -36,7 +36,9 @@
 ****************************************************************************}
 
     { the reverse order of the parameters make code generation easier }
-    function fpc_do_is(aclass : tclass;aobject : tobject) : boolean;[public,alias: 'FPC_DO_IS']; compilerproc;
+    { Expose the nil checks and ancestry walk to callers. In particular, a
+      constant class operand needs neither a class-nil test nor a helper call. }
+    function fpc_do_is(aclass : tclass;aobject : tobject) : boolean;[public,alias: 'FPC_DO_IS']; compilerproc; {$ifdef SYSTEMINLINE}inline;{$endif}
       begin
          fpc_do_is:=assigned(aobject) and assigned(aclass) and
            aobject.inheritsfrom(aclass);

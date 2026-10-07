@@ -28,7 +28,7 @@ interface
   uses
     globtype,cclasses,
     aasmbase,aasmdata,aasmllvmmetadata, ngenutil,
-    symtype,symconst,symsym,symdef;
+    symtype,symconst,symsym,symdef,node;
 
 
   type
@@ -39,6 +39,7 @@ interface
       class procedure InsertInitFiniList(var procdefs: tfplist; const initfinisymsname: TSymStr);
       class procedure InsertAsanGlobals;
      public
+      class function finalize_data_node(p: tnode): tnode; override;
       class procedure InsertObjectInfo; override;
       class procedure RegisterUsedAsmSym(sym: TAsmSymbol; def: tdef; compileronly: boolean); override;
       class procedure RegisterModuleInitFunction(pd: tprocdef); override;
@@ -54,7 +55,47 @@ implementation
       aasmcnst,nllvmtcon,
       symbase,symtable,defutil,
       llvminfo,llvmtype,llvmdef,
+      nbas,ncal,nmem,nadd,ncon,nflw,nutils,
       objcasm;
+
+  class function tllvmnodeutils.finalize_data_node(p: tnode): tnode;
+    var
+      helpername: TSymStr;
+      finalizer: tnode;
+      parameter: tcallparanode;
+      address: ttempcreatenode;
+      statements: tstatementnode;
+      addressdef: tdef;
+    begin
+      { Inherited must run before any typechecking: it skips locals moved to
+        the parent frame. Typechecking such a local here can mark an unused
+        frame as referenced after initialization has already been decided. }
+      result:=inherited finalize_data_node(p);
+      if (result.nodetype<>calln) or
+         not assigned(tcallnode(result).symtableprocentry) then
+        exit;
+      helpername:=upper(tcallnode(result).symtableprocentry.name);
+      if (helpername<>'FPC_ANSISTR_DECR_REF') and
+         (helpername<>'FPC_UNICODESTR_DECR_REF') then
+        exit;
+
+      { The inherited routine selected the AnsiString/UnicodeString decrement
+        helper. Both do nothing for nil. Unlike g_finalize, this path is used
+        for out-parameter clearing and explicit Finalize calls. Evaluate the
+        target address once before exposing the same nil fast path to LLVM. }
+      finalizer:=result;
+      parameter:=tcallparanode(tcallnode(finalizer).left);
+      addressdef:=cpointerdef.getreusable(voidpointertype);
+      address:=ctempcreatenode.create_value(addressdef,addressdef.size,
+        tt_persistent,true,caddrnode.create_internal(parameter.left));
+      parameter.left:=cderefnode.create(ctemprefnode.create(address));
+      result:=internalstatements(statements);
+      addstatement(statements,address);
+      addstatement(statements,cifnode.create(
+        caddnode.create(unequaln,cderefnode.create(ctemprefnode.create(address)),
+          cnilnode.create),finalizer,nil));
+      addstatement(statements,ctempdeletenode.create(address));
+    end;
 
   class procedure tllvmnodeutils.insertbsssym(list: tasmlist; sym: tstaticvarsym; size: asizeint; varalign: shortint; _typ:Tasmsymtype);
     var

@@ -33,6 +33,7 @@ interface
       tllvminlinenode = class(tcginlinenode)
        protected
         procedure maybe_remove_round_trunc_typeconv;
+        function lower_real_to_int64: tnode;
 
         function first_get_frame: tnode; override;
         function first_abs_real: tnode; override;
@@ -40,7 +41,9 @@ interface
         function first_fma: tnode; override;
         function first_sqr_real: tnode; override;
         function first_sqrt_real: tnode; override;
+        function first_round_real: tnode; override;
         function first_trunc_real: tnode; override;
+        function first_int_real: tnode; override;
         function first_popcnt: tnode; override;
        public
         procedure second_length; override;
@@ -57,11 +60,11 @@ implementation
        aasmbase, aasmdata,
        symconst,symtype,symdef,defutil,
        compinnr,
-       nutils,nadd,nbas,ncal,ncnv,ncon,nflw,ninl,nld,nmat,
+       nutils,nadd,nbas,ncal,ncnv,ncon,nflw,ninl,nld,nmat,nmem,
        pass_2,
        cgbase,cgutils,tgobj,hlcgobj,
        cpubase,
-       llvmbase,aasmllvm,aasmllvmmetadata;
+       llvmbase,llvminfo,aasmllvm,aasmllvmmetadata;
 
      procedure tllvminlinenode.maybe_remove_round_trunc_typeconv;
        var
@@ -325,10 +328,88 @@ implementation
       end;
 
 
+    function tllvminlinenode.lower_real_to_int64: tnode;
+{$ifdef aarch64}
+      var
+        statements: tstatementnode;
+        argumenttemp, resulttemp: ttempcreatenode;
+        argument: pnode;
+        bits, condition, fastcall, slowcall: tnode;
+        callparameters: tcallparanode;
+        intrinsic, helper: string;
+{$endif aarch64}
+      begin
+        result:=nil;
+{$ifdef aarch64}
+        { These intrinsics match the AArch64 RTL's instructions and exception
+          behavior. Retain the RTL path for other targets and older LLVM. }
+        if current_settings.llvmversion<llvmver_17_0 then
+          exit;
+        if left.nodetype=callparan then
+          argument:=@tcallparanode(left).left
+        else
+          argument:=@left;
+        if not is_double(argument^.resultdef) then
+          exit;
+        result:=internalstatements(statements);
+        argumenttemp:=ctempcreatenode.create(s64floattype,8,tt_persistent,true);
+        resulttemp:=ctempcreatenode.create(s64inttype,8,tt_persistent,false);
+        addstatement(statements,argumenttemp);
+        addstatement(statements,resulttemp);
+        addstatement(statements,cassignmentnode.create(ctemprefnode.create(argumenttemp),argument^));
+        argument^:=nil;
+        { Inspect the bits without raising an exception on a signaling NaN.
+          |x|<2^63 excludes every invalid conversion. Its largest binary64
+          value is 1024 below 2^63, so all rounding modes are safe. LLVM leaves
+          invalid integer results unspecified; preserve the RTL fallback for
+          those values, including the exactly representable -2^63 boundary. }
+        bits:=cderefnode.create(ctypeconvnode.create_internal(
+          caddrnode.create_internal(ctemprefnode.create(argumenttemp)),
+          cpointerdef.getreusable(u64inttype)));
+        condition:=caddnode.create(ltn,
+          caddnode.create(andn,bits,cordconstnode.create(qword($7fffffffffffffff),u64inttype,false)),
+          cordconstnode.create(qword($43e0000000000000),u64inttype,false));
+        callparameters:=ccallparanode.create(ctemprefnode.create(argumenttemp),nil);
+        if inlinenumber=in_round_real then
+          begin
+            intrinsic:='llvm_experimental_constrained_lrint_i64_f64';
+            helper:='fpc_round_real';
+            callparameters:=ccallparanode.create(cstringconstnode.createpchar(
+              ansistring2pchar('round.dynamic'),length('round.dynamic'),llvm_metadatatype),callparameters);
+          end
+        else
+          begin
+            intrinsic:='llvm_experimental_constrained_fptosi_i64_f64';
+            helper:='fpc_trunc_real';
+          end;
+        callparameters:=ccallparanode.create(cstringconstnode.createpchar(
+          ansistring2pchar('fpexcept.strict'),length('fpexcept.strict'),llvm_metadatatype),callparameters);
+        fastcall:=ccallnode.createintern(intrinsic,callparameters);
+        include(tcallnode(fastcall).callnodeflags,cnf_check_fpu_exceptions);
+        slowcall:=ccallnode.createintern(helper,
+          ccallparanode.create(ctemprefnode.create(argumenttemp),nil));
+        include(tcallnode(slowcall).callnodeflags,cnf_check_fpu_exceptions);
+        addstatement(statements,cifnode.create(condition,
+          cassignmentnode.create(ctemprefnode.create(resulttemp),fastcall),
+          cassignmentnode.create(ctemprefnode.create(resulttemp),slowcall)));
+        addstatement(statements,ctempdeletenode.create(argumenttemp));
+        addstatement(statements,ctempdeletenode.create_normal_temp(resulttemp));
+        addstatement(statements,ctemprefnode.create(resulttemp));
+{$endif aarch64}
+      end;
+
+
+    function tllvminlinenode.first_round_real: tnode;
+      begin
+        result:=lower_real_to_int64;
+        if not assigned(result) then
+          result:=inherited;
+      end;
+
+
     function tllvminlinenode.first_trunc_real: tnode;
       begin
-        { fptosi is undefined if the value is out of range -> only generate
-          in cast of fastmath }
+        { Fast math already permits fptosi's undefined out-of-range result. }
         if cs_opt_fastmath in current_settings.optimizerswitches then
           begin
             maybe_remove_round_trunc_typeconv;
@@ -336,8 +417,42 @@ implementation
             result:=nil;
           end
         else
-          result:=inherited;
+          begin
+            result:=lower_real_to_int64;
+            if not assigned(result) then
+              result:=inherited;
+          end;
       end;
+
+
+    function tllvminlinenode.first_int_real: tnode;
+{$ifdef aarch64}
+      var
+        argument: pnode;
+{$endif aarch64}
+      begin
+{$ifdef aarch64}
+        if left.nodetype=callparan then
+          argument:=@tcallparanode(left).left
+        else
+          argument:=@left;
+        if (current_settings.llvmversion>=llvmver_17_0) and
+           is_double(argument^.resultdef) then
+          begin
+            { Like the RTL's FRINTZ, this rounds towards zero without raising
+              inexact, while preserving invalid exceptions and NaN handling. }
+            result:=ccallnode.createintern('llvm_experimental_constrained_trunc_f64',
+              ccallparanode.create(cstringconstnode.createpchar(
+                ansistring2pchar('fpexcept.strict'),length('fpexcept.strict'),llvm_metadatatype),
+                ccallparanode.create(argument^,nil)));
+            include(tcallnode(result).callnodeflags,cnf_check_fpu_exceptions);
+            argument^:=nil;
+            exit;
+          end;
+{$endif aarch64}
+        result:=inherited;
+      end;
+
 
     function tllvminlinenode.first_popcnt: tnode;
       begin

@@ -21,21 +21,38 @@
 
 {$ifndef FPC_SYSTEM_HAS_MOVE}
 {$define FPC_SYSTEM_HAS_MOVE}
+{$ifdef CPULLVM}
+{ All supported LLVM versions (7.0+) place alignment on the pointer arguments,
+  as with llvm_memcpy64_indivalign. Omitted alignment permits byte access.
+  Keep this private to System: callers use the ordinary inlined Move wrapper. }
+procedure llvm_move64(dest, source: pointer; count: qword; isvolatile: LLVMBool1);
+  external name 'llvm.memmove.p0i8.p0i8.i64';
+{$else CPULLVM}
 procedure bcopy(const source;var dest;count:size_t); cdecl; external clib name 'bcopy';
+{$endif CPULLVM}
 
 { we need this separate move declaration because we can't add a "public, alias" to the above }
 procedure Move(const source;var dest;count:sizeint); [public, alias: 'FPC_MOVE'];{$ifdef SYSTEMINLINE}inline;{$endif}
 begin
   if count <= 0 then
     exit;
+{$ifdef CPULLVM}
+  llvm_move64(@dest,@source,qword(count),False);
+{$else CPULLVM}
   bcopy(source,dest,size_t(count));
+{$endif CPULLVM}
 end;
 {$endif not FPC_SYSTEM_HAS_MOVE}
 
 
 {$ifndef FPC_SYSTEM_HAS_FILLCHAR}
 {$define FPC_SYSTEM_HAS_FILLCHAR}
+{$ifdef CPULLVM}
+procedure llvm_fill64(dest: pointer; value: byte; count: qword; isvolatile: LLVMBool1);
+  external name 'llvm.memset.p0i8.i64';
+{$else CPULLVM}
 procedure memset(var x; value: byte; count: size_t); cdecl; external clib;
+{$endif CPULLVM}
 
 Procedure FillChar(var x;count: sizeint;value:byte);{$ifdef SYSTEMINLINE}inline;{$endif}
 begin
@@ -44,7 +61,11 @@ begin
     probably negligible }
   if count < 0 then
     count := 0;
+{$ifdef CPULLVM}
+  llvm_fill64(@x,value,qword(count),False);
+{$else CPULLVM}
   memset(x,value,size_t(count));
+{$endif CPULLVM}
 end;
 {$endif FPC_SYSTEM_HAS_FILLCHAR}
 
@@ -60,9 +81,11 @@ end;
   {$define MEMCHR_NEEDS_LEN_POSITIVE}
 {$endif}
 
-function memchr(const buf; b: cint; len: size_t): pointer; cdecl; external clib;
+{ These functions return an address inside buf. Use a pointer parameter rather
+  than an untyped const parameter, which LLVM marks as nocapture. }
+function memchr(buf: pointer; b: cint; len: size_t): pointer; cdecl; external clib;
 {$ifdef BUGGYMEMCHR}
-function rawmemchr(const buf; b: cint): pointer; cdecl; external clib;
+function rawmemchr(buf: pointer; b: cint): pointer; cdecl; external clib;
 {$endif BUGGYMEMCHR}
 
 function IndexByte(Const buf;len:sizeint;b:byte):sizeint;{$ifdef SYSTEMINLINE}inline;{$endif}
@@ -76,7 +99,7 @@ begin
   { unsigned)                                                       }
 {$ifdef BUGGYMEMCHR}
   if len = -1 then
-    res := rawmemchr(buf,cint(b))
+    res := rawmemchr(@buf,cint(b))
   else
 {$else not BUGGYMEMCHR}
 {$ifdef MEMCHR_NEEDS_LEN_POSITIVE}
@@ -84,7 +107,7 @@ begin
     len := high(sizeint);
 {$endif MEMCHR_NEEDS_LEN_POSITIVE}
 {$endif BUGGYMEMCHR}
-    res := memchr(buf,cint(b),size_t(sizeuint(len)));
+    res := memchr(@buf,cint(b),size_t(sizeuint(len)));
   if (res <> nil) then
     IndexByte := SizeInt(res-@buf)
   else
@@ -143,5 +166,4 @@ begin
 end;
 
 {$endif ndef FPC_SYSTEM_HAS_FPC_PCHAR_LENGTH}
-
 

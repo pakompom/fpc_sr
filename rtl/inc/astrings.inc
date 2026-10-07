@@ -1133,9 +1133,24 @@ end;
 Procedure fpc_AnsiStr_UInt(v : ValUInt;Len : SizeInt; out S : RawByteString;cp : TSystemCodePage);[Public,Alias : 'FPC_ANSISTR_VALUINT']; compilerproc; inline;
 Var
   SS : ShortString;
+  SmallSS : String[20];
 begin
-  str(v:Len,SS);
-  S:=SS;
+  { Fill the out parameter directly: assigning the ShortString first creates
+    an intermediate managed string and its exception cleanup when inlined. }
+  { Every 64-bit integer fits in 20 characters. The usual unpadded case can
+    therefore discard the large buffer when this wrapper is inlined. }
+  if Len<=20 then
+    begin
+      str(v:Len,SmallSS);
+      SetLength(S,Length(SmallSS));
+      fpc_shortstr_ansistr_intern_charmove(SmallSS,1,S,0,Length(SmallSS));
+    end
+  else
+    begin
+      str(v:Len,SS);
+      SetLength(S,Length(SS));
+      fpc_shortstr_ansistr_intern_charmove(SS,1,S,0,Length(SS));
+    end;
   SetCodePage(s,cp,false);
 end;
 
@@ -1144,9 +1159,20 @@ end;
 Procedure fpc_AnsiStr_SInt(v : ValSInt;Len : SizeInt; out S : RawByteString;cp : TSystemCodePage);[Public,Alias : 'FPC_ANSISTR_VALSINT']; compilerproc; inline;
 Var
   SS : ShortString;
+  SmallSS : String[20];
 begin
-  str (v:Len,SS);
-  S:=SS;
+  if Len<=20 then
+    begin
+      str(v:Len,SmallSS);
+      SetLength(S,Length(SmallSS));
+      fpc_shortstr_ansistr_intern_charmove(SmallSS,1,S,0,Length(SmallSS));
+    end
+  else
+    begin
+      str(v:Len,SS);
+      SetLength(S,Length(SS));
+      fpc_shortstr_ansistr_intern_charmove(SS,1,S,0,Length(SS));
+    end;
   SetCodePage(s,cp,false);
 end;
 

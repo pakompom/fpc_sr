@@ -1339,7 +1339,12 @@ implementation
              ((cs_implicit_exceptions in current_settings.moduleswitches) and
               (pi_needs_implicit_finally in flags))) or
              (pi_has_except_table_data in flags) then
-           procdef.personality:=search_system_proc('_FPC_PSABIEH_PERSONALITY_V0');
+           begin
+             if target_info.system=system_x86_64_win64 then
+               procdef.personality:=search_system_proc('_FPC_PSABIEH_PERSONALITY_SEH0')
+             else
+               procdef.personality:=search_system_proc('_FPC_PSABIEH_PERSONALITY_V0');
+           end;
       end;
 
 

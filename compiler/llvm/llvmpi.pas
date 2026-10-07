@@ -88,15 +88,21 @@ implementation
 
 
       class procedure tllvmexceptionstatehandler.emit_exception_boundary(list: TAsmList);
-{$ifdef aarch64}
+{$if defined(aarch64) or defined(x86_64)}
         var
           nextinslab: TAsmLabel;
 {$endif}
         begin
-{$ifdef aarch64}
-          if current_settings.llvmversion>=llvmver_17_0 then
+{$if defined(aarch64) or defined(x86_64)}
+          if (current_settings.llvmversion>=llvmver_17_0)
+{$ifdef x86_64}
+             and (target_info.system=system_x86_64_win64)
+{$endif}
+          then
             begin
               { Keep an opaque unwind edge and memory barrier without a call.
+                Win64's LLVM trampoline supplies the fault IP in a machine
+                frame, so x86-64 needs only a NOP and memory clobber.
                 AArch64 signal trampolines enter the error handler with LR
                 unchanged. Seed LR inside this region, just as the old dummy
                 call did; its explicit clobber preserves the caller's LR.

@@ -135,19 +135,31 @@ const
     public name '__FPC_tls_callbacks' section '.CRT$XLFPC';
   FreePascal_end_of_TLS_callback : pointer = nil;
     public name '__FPC_end_of_tls_callbacks' section '.CRT$XLZZZ';
+{$ifdef CPULLVM}
+var
+  { LLD uses ordered PE subsections instead of a GNU linker script. }
+  tls_data_start: byte = 0; public name '___tls_start__' section '.tls$AAA';
+  tls_data_end: byte = 0; public name '___tls_end__' section '.tls$ZZZ';
+  _tls_index: dword = 0; cvar; public;
+{$else}
 var
   tls_callbacks : pointer; external name '___crt_xl_start__';
   tls_data_start : pointer; external name '___tls_start__';
   tls_data_end : pointer; external name '___tls_end__';
 
   _tls_index : dword; cvar; external;
+{$endif}
 
 const
   _tls_used : TTlsDirectory = (
     data_start : @tls_data_start;
     data_end : @tls_data_end;
     index_pointer : @_tls_index;
+{$ifdef CPULLVM}
+    callbacks_pointer : @FreePascal_TLS_callback;
+{$else}
     callbacks_pointer : @tls_callbacks;
+{$endif}
     zero_fill_size : 0;
     flags : 0;
   ); cvar; public;

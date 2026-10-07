@@ -1759,7 +1759,7 @@ implementation
                  emit_string_const_common() for explanation) }
                startlab:=tasmlabel.create(current_asmdata.AsmSymbolDict,startlab.name+'$strlab',startlab.bind,startlab.typ);
              end
-           else
+           else if string_symofs<>s32inttype.size then
              internalerror(2015031502);
            result.ofs:=string_symofs;
          end

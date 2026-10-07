@@ -252,7 +252,8 @@ interface
         offset: aint;
         datalabel: TAsmSymbol;
         datadef: TDef;
-        constructor Create(asym: tsym; aoffset: aint; alabel: TAsmSymbol; alabeldef: tdef);
+        dataoffset: aint;
+        constructor Create(asym: tsym; aoffset: aint; alabel: TAsmSymbol; alabeldef: tdef; adataoffset: aint = 0);
       end;
 
     var
@@ -355,13 +356,14 @@ implementation
 *****************************************************************************}
 
 
-    constructor TTCInitItem.Create(asym: tsym; aoffset: aint; alabel: TAsmSymbol; alabeldef: tdef);
+    constructor TTCInitItem.Create(asym: tsym; aoffset: aint; alabel: TAsmSymbol; alabeldef: tdef; adataoffset: aint);
       begin
         inherited Create;
         sym:=asym;
         offset:=aoffset;
         datalabel:=alabel;
         datadef:=alabeldef;
+        dataoffset:=adataoffset;
       end;
 
 {*****************************************************************************

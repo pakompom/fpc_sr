@@ -2182,7 +2182,9 @@ implementation
       stringdispose(orgpd.import_dll);
       orgpd.import_nr:=0;
       newpd.setmangledname(newname);
-      finish_copied_procdef(newpd,'__FPC_IMPL_EXTERNAL_REDIRECT_'+newname,current_module.localsymtable,nil);
+      { The external name may contain assembler-only characters (e.g. a
+        Windows import decoration); the synthetic body is parsed as Pascal. }
+      finish_copied_procdef(newpd,'__FPC_IMPL_EXTERNAL_REDIRECT_'+newpd.unique_id_str,current_module.localsymtable,nil);
       newpd.forwarddef:=false;
       { ideally we would prefix the parameters of the original routine here, but since it
         can be an interface definition, we cannot do that without risking to change the

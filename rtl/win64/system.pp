@@ -63,10 +63,16 @@ procedure OsSetupEntryInformation(constref info: TEntryInformation); forward;
 procedure SetupEntryInformation(constref info: TEntryInformation);forward;
 
 {$define FPC_SYSTEM_HAS_STACKTOP}
+{$ifdef SYSTEM_USE_WIN_SEH}
 function main_wrapper(arg: Pointer; proc: Pointer): ptrint; forward;
+{$endif}
 
 { include system independent routines }
 {$I system.inc}
+
+{$ifndef SYSTEM_USE_WIN_SEH}
+procedure install_exception_handlers;forward;
+{$endif SYSTEM_USE_WIN_SEH}
 
 {$I cpuwin.inc}
 
@@ -74,9 +80,6 @@ function main_wrapper(arg: Pointer; proc: Pointer): ptrint; forward;
                          System Dependent Exit code
 *****************************************************************************}
 
-{$ifndef SYSTEM_USE_WIN_SEH}
-procedure install_exception_handlers;forward;
-{$endif SYSTEM_USE_WIN_SEH}
 
 { include code common with win32 }
 {$I syswin.inc}
@@ -157,6 +160,35 @@ begin
 end;
 {$endif SYSTEMEXCEPTIONDEBUG}
 
+{$ifdef CPULLVM}
+type
+  PLLVMErrorFrame = ^TLLVMErrorFrame;
+  TLLVMErrorFrame = packed record
+    IP, CS, Flags, SP, SS: QWord;
+  end;
+
+{ The exception context supplies a machine frame. Describe it to SEH so
+  unwinding restores the faulting stack even when LLVM omitted RBP. }
+procedure LLVMHandleErrorFrame; assembler; nostackframe;
+asm
+  .seh_pushframe
+  subq $56,%rsp
+  .seh_stackalloc 56
+  .seh_endprologue
+  movq %rcx,32(%rsp)
+  movq %rdx,40(%rsp)
+  movq %r8,48(%rsp)
+  testl %r9d,%r9d
+  jz .Lready
+  call SysResetFPU
+.Lready:
+  movq 32(%rsp),%rcx
+  movq 40(%rsp),%rdx
+  movq 48(%rsp),%r8
+  call HandleErrorAddrFrame
+  int3
+end;
+{$else}
 procedure JumpToHandleErrorFrame;
   var
     rip, rbp : int64;
@@ -199,11 +231,16 @@ procedure JumpToHandleErrorFrame;
   end;
 
 
+{$endif CPULLVM}
+
 function syswin64_x86_64_exception_handler(excep : PExceptionPointers) : Longint;public;
   var
     res: longint;
     err: byte;
     must_reset_fpu: boolean;
+{$ifdef CPULLVM}
+    frame: PLLVMErrorFrame;
+{$endif}
   begin
     res:=EXCEPTION_CONTINUE_SEARCH;
 {$ifdef SYSTEMEXCEPTIONDEBUG}
@@ -282,21 +319,34 @@ function syswin64_x86_64_exception_handler(excep : PExceptionPointers) : Longint
 
         if (err <> 0) and (exceptLevel < MaxExceptionLevel) then
           begin
+{$ifdef CPULLVM}
+            frame:=PLLVMErrorFrame((excep^.ContextRecord^.Rsp and not QWord(15))-SizeOf(TLLVMErrorFrame));
+            frame^.IP:=excep^.ContextRecord^.Rip+1;
+            frame^.CS:=excep^.ContextRecord^.SegCs;
+            frame^.Flags:=excep^.ContextRecord^.EFlags;
+            frame^.SP:=excep^.ContextRecord^.Rsp;
+            frame^.SS:=excep^.ContextRecord^.SegSs;
+            excep^.ContextRecord^.Rcx:=err;
+            excep^.ContextRecord^.Rdx:=excep^.ContextRecord^.Rip;
+            excep^.ContextRecord^.R8:=excep^.ContextRecord^.Rbp;
+            excep^.ContextRecord^.R9:=Ord(must_reset_fpu);
+            excep^.ContextRecord^.Rsp:=QWord(frame);
+            excep^.ContextRecord^.Rip:=QWord(@LLVMHandleErrorFrame);
+{$else}
             exceptRip[exceptLevel] := excep^.ContextRecord^.Rip;
             exceptError[exceptLevel] := err;
             resetFPU[exceptLevel] := must_reset_fpu;
             inc(exceptLevel);
 
             excep^.ContextRecord^.Rip := Int64(@JumpToHandleErrorFrame);
+{$endif}
             excep^.ExceptionRecord^.ExceptionCode := 0;
 
             res := EXCEPTION_CONTINUE_EXECUTION;
 {$ifdef SYSTEMEXCEPTIONDEBUG}
             if IsConsole then begin
-              writeln(stderr,'Exception Continue Exception set at ',
-                      hexstr(exceptRip[exceptLevel-1],16));
-              writeln(stderr,'Rip changed to ',
-                      hexstr(int64(@JumpToHandleErrorFrame),16), ' error=', err);
+              writeln(stderr,'Hardware exception redirected to ',
+                      hexstr(excep^.ContextRecord^.Rip,16), ' error=', err);
             end;
 {$endif SYSTEMEXCEPTIONDEBUG}
         end;

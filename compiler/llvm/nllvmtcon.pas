@@ -751,10 +751,8 @@ implementation
       secondop: tllvmop;
     begin
       inherited;
-      if (llvmflag_opaque_ptr in llvmversion_properties[current_settings.llvmversion]) and
-         is_address(fromdef) and
-         is_address(todef) then
-        exit;
+      { Keep pointer casts in the typed constant tree even with opaque LLVM
+        pointers: an enclosing GEP still needs the destination element type. }
       { special case: procdef -> procvardef/pointerdef: must take address of
         the procdef }
       if (fromdef.typ=procdef) and
@@ -908,7 +906,10 @@ implementation
   class function tllvmtai_typedconstbuilder.get_string_symofs(typ: tstringtype; winlikewidestring: boolean): pint;
     begin
       { LLVM does not support labels in the middle of a declaration }
-      result:=get_string_header_size(typ,winlikewidestring);
+      if (typ=st_widestring) and winlikewidestring then
+        result:=s32inttype.size
+      else
+        result:=get_string_header_size(typ,winlikewidestring);
     end;
 
 

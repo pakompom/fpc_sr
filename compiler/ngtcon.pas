@@ -623,11 +623,13 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
                           ((tcsym.owner.symtablelevel<=main_program_level) or
                            (current_old_block_type=bt_const)) then
                          begin
-                           if ll.ofs<>0 then
-                             internalerror(2012051704);
-                           current_asmdata.WideInits.Concat(
-                              TTCInitItem.Create(tcsym,curoffset,ll.lab,widecharpointertype)
-                           );
+                           if ll.ofs=0 then
+                             current_asmdata.WideInits.Concat(
+                               TTCInitItem.Create(tcsym,curoffset,ll.lab,widecharpointertype))
+                           else
+                             current_asmdata.WideInits.Concat(
+                               TTCInitItem.Create(tcsym,curoffset,ll.lab,
+                                 cpointerdef.getreusable(ftcb.get_dynstring_rec(st_widestring,true,strlength)),ll.ofs));
                            ll.lab:=nil;
                            ll.ofs:=0;
                            Include(tcsym.varoptions,vo_force_finalize);
@@ -1343,7 +1345,7 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
           begin
             ftcb.maybe_begin_aggregate(def);
             oldoffset:=curoffset;
-            curoffset:=0;
+            { Retain an enclosing record/array's offset for runtime inits. }
             { in case of a generic subroutine, it might be we cannot
               determine the size yet }
             if assigned(current_procinfo) and (df_generic in current_procinfo.procdef.defoptions) then

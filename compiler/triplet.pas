@@ -59,7 +59,12 @@ uses
             presumably how they will differentiate it }
           if target_info.system in systems_windows then
             result:=result+'-pc';
-          result:=result+'-windows-msvc19'
+{$ifdef llvm}
+          if target_info.system=system_x86_64_win64 then
+            result:=result+'-windows-gnu'
+          else
+{$endif}
+            result:=result+'-windows-msvc19'
         end
       else if target_info.system in systems_freebsd then
         result:=result+'-unknown-freebsd'

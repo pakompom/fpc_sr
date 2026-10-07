@@ -131,6 +131,9 @@ const
 
     {$ifndef FPC_SYSTEM_HAS_ABS}
     {$define FPC_SYSTEM_HAS_ABS}
+{$if defined(CPULLVM) and not defined(FPC_HAS_TYPE_EXTENDED)}
+    function llvm_abs_double(d: Double): Double; external name 'llvm.fabs.f64';
+{$endif}
     function fpc_abs_real(d : ValReal) : ValReal;compilerproc;
 {$ifndef cpullvm}
     begin
@@ -138,10 +141,15 @@ const
       runerror(207);
       result:=0;
 {$else not cpullvm}
+{$ifdef FPC_HAS_TYPE_EXTENDED}
     assembler;
     asm
       fldt d
       fabs
+{$else}
+    begin
+      result:=llvm_abs_double(d);
+{$endif}
 {$endif not cpullvm}
     end;
     {$endif FPC_SYSTEM_HAS_ABS}
@@ -170,8 +178,12 @@ const
 {$else not cpullvm}
     assembler;
     asm
+{$ifdef FPC_HAS_TYPE_EXTENDED}
       fldt d
       fsqrt
+{$else}
+      sqrtsd %xmm0,%xmm0
+{$endif}
 {$endif not cpullvm}
     end;
     {$endif FPC_SYSTEM_HAS_SQRT}

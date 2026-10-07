@@ -389,7 +389,7 @@ const
         if arg.resultdef.size>8 then
           begin
             { Native binary80 comparison already uses the exact literal. }
-            if (target_info.cpu=cpu_x86_64) and is_extended(arg.resultdef) then
+            if (target_info.cpu=systems.cpu_x86_64) and is_extended(arg.resultdef) then
               exit;
             Comment(V_Error,'LEGACYPC24 comparison operand format is not supported');
             exit(cerrornode.create);
@@ -470,7 +470,7 @@ const
         source_demand:=delphi_source_demand(self);
         if pc24_needs_extended(left) or pc24_needs_extended(right) then
           begin
-            if target_info.cpu<>cpu_x86_64 then
+            if target_info.cpu<>systems.cpu_x86_64 then
               begin
                 Comment(V_Error,'LEGACYPC24 native Extended arithmetic is not supported on this target');
                 exit(cerrornode.create);
@@ -2868,7 +2868,7 @@ const
                resultrealdef:=s64floattype;
                if pc24_needs_extended(left) or pc24_needs_extended(right) then
                  begin
-                   if target_info.cpu<>cpu_x86_64 then
+                   if target_info.cpu<>systems.cpu_x86_64 then
                      begin
                        Comment(V_Error,'LEGACYPC24 native Extended arithmetic is not supported on this target');
                        exit(cerrornode.create);

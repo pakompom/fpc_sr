@@ -87,3 +87,9 @@ procedure FPC_psabi_end_catch; cdecl; compilerproc;
 procedure FPC_DummyPotentialRaise;
 
 {$packrecords default}
+
+{$ifdef WIN64}
+{ Windows invokes an SEH handler; libunwind adapts it to our PSABI personality. }
+function _FPC_psabieh_personality_seh0(rec, frame, context, dispatch: pointer): longint;
+  cdecl; public;
+{$endif}

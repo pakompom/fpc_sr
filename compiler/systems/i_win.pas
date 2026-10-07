@@ -107,6 +107,7 @@ unit i_win;
             shortname    : 'Win64';
             flags        : [tf_files_case_aware,tf_has_dllscanner,
                             tf_smartlink_sections,
+                            {$ifdef llvm}tf_use_psabieh,{$endif}
                             tf_winlikewidestring,tf_no_pic_supported,
                             tf_dwarf_only_local_labels,
                             tf_no_generic_stackcheck,tf_has_winlike_resources,

@@ -60,7 +60,7 @@ implementation
      uses
        verbose,globals,globtype,constexp,cutils,
        aasmbase, aasmdata,
-       symconst,symtype,symdef,defutil,symtable,
+       symconst,symtype,symdef,defutil,symtable,symcpu,
        compinnr,
        nutils,nadd,nbas,ncal,ncnv,ncon,nflw,ninl,nld,nmat,nmem,htypechk,
        pass_2,
@@ -399,7 +399,7 @@ implementation
 
 
     function tllvminlinenode.lower_real_to_int64: tnode;
-{$ifdef aarch64}
+{$if defined(aarch64) or defined(x86_64)}
       var
         statements: tstatementnode;
         argumenttemp, resulttemp: ttempcreatenode;
@@ -407,14 +407,22 @@ implementation
         bits, condition, fastcall, slowcall: tnode;
         callparameters: tcallparanode;
         intrinsic, helper: string;
-{$endif aarch64}
+{$endif}
       begin
         result:=nil;
-{$ifdef aarch64}
-        { These intrinsics match the AArch64 RTL's instructions and exception
-          behavior. Retain the RTL path for other targets and older LLVM. }
-        if current_settings.llvmversion<llvmver_17_0 then
+{$if defined(aarch64) or defined(x86_64)}
+        { Use the native Double conversion ABI. Targets whose RTL takes
+          Extended retain its x87 rounding semantics. Invalid values still
+          go through the target RTL, which determines their result. }
+        if (current_settings.llvmversion<llvmver_17_0) or
+           not is_double(pbestrealtype^) then
           exit;
+{$ifdef x86_64}
+        { LLVM lowers strict lrint to C long on Win64 (32 bits); llrint
+          would retain a library call. Keep the RTL's direct CVTSD2SI. }
+        if inlinenumber=in_round_real then
+          exit;
+{$endif}
         if left.nodetype=callparan then
           argument:=@tcallparanode(left).left
         else
@@ -465,7 +473,7 @@ implementation
         addstatement(statements,ctempdeletenode.create(argumenttemp));
         addstatement(statements,ctempdeletenode.create_normal_temp(resulttemp));
         addstatement(statements,ctemprefnode.create(resulttemp));
-{$endif aarch64}
+{$endif}
       end;
 
 

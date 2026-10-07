@@ -595,7 +595,11 @@ implementation
            end;
         la_ehbarrier:
           begin
+{$ifdef aarch64}
             owner.writer.AsmWrite('invoke void asm sideeffect unwind "adr x30, 0f\0A0:", "~{lr},~{memory},~{fpsr},~{flags}"() to ');
+{$else}
+            owner.writer.AsmWrite('invoke void asm sideeffect unwind "nop", "~{memory},~{dirflag},~{fpsr},~{flags}"() to ');
+{$endif}
             owner.writer.AsmWrite(getopstr(taillvm(hp).oper[0]^,false));
             owner.writer.AsmWrite(' unwind ');
             owner.writer.AsmWrite(getopstr(taillvm(hp).oper[1]^,false));
@@ -1831,7 +1835,7 @@ implementation
           idtxt  : 'CLANG-LLVM';
           asmbin : 'clang';
           asmcmd: '-x ir $OPT -target $TRIPLET -c -o $OBJ $ASM $EXTRAOPT';
-          supported_targets : [system_x86_64_linux,system_aarch64_linux,system_arm_linux,system_x86_64_openbsd,system_x86_64_freebsd,system_aarch64_android];
+          supported_targets : [system_x86_64_win64,system_x86_64_linux,system_aarch64_linux,system_arm_linux,system_x86_64_openbsd,system_x86_64_freebsd,system_aarch64_android];
           flags : [af_smartlink_sections,af_llvm];
           labelprefix : '.L';
           labelmaxlen : -1;

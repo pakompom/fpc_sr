@@ -74,6 +74,7 @@ interface
       TExternalLinkerWin=class(texternallinker)
       private
          Function  WriteResponseFile(isdll:boolean) : Boolean;
+         Function  WriteLLDResponseFile : Boolean;
          Function  PostProcessExecutable(const fn:string;isdll:boolean) : Boolean;
       public
          Constructor Create;override;
@@ -1143,6 +1144,14 @@ implementation
       var
         targetopts: string;
       begin
+{$if defined(llvm) and defined(x86_64)}
+        if cs_link_lld in current_settings.globalswitches then
+          begin
+            Info.ExeCmd[1]:='ld.lld -m i386pep $OPT $GCSECTIONS $MAP $STRIP $APPTYPE $ENTRY $IMAGEBASE -o $EXE @$RES';
+            Info.DllCmd[1]:='ld.lld -m i386pep $OPT $GCSECTIONS $MAP $STRIP --dll $APPTYPE $ENTRY $IMAGEBASE -o $EXE @$RES';
+            exit;
+          end;
+{$endif}
         with Info do
          begin
 {$ifdef aarch64}
@@ -1171,6 +1180,50 @@ implementation
 
 
 
+    Function TExternalLinkerWin.WriteLLDResponseFile : Boolean;
+      var
+        linkres: TLinkRes;
+        hp: TCmdStrListItem;
+        s,s2: TCmdStr;
+        i: integer;
+      begin
+        { LLD's MinGW driver takes an argument response file, not a GNU ld
+          SECTIONS script. Its default PE layout supplies unwind/import tables. }
+        linkres:=TLinkRes.Create(outputexedir+Info.ResName,true);
+        hp:=TCmdStrListItem(current_module.locallibrarysearchpath.First);
+        while assigned(hp) do
+          begin
+            linkres.Add('-L'+MaybeQuoted(hp.Str));
+            hp:=TCmdStrListItem(hp.Next);
+          end;
+        hp:=TCmdStrListItem(LibrarySearchPath.First);
+        while assigned(hp) do
+          begin
+            linkres.Add('-L'+MaybeQuoted(hp.Str));
+            hp:=TCmdStrListItem(hp.Next);
+          end;
+        while not ObjectFiles.Empty do
+          linkres.AddFileName(MaybeQuoted(ObjectFiles.GetFirst));
+        while not StaticLibFiles.Empty do
+          linkres.AddFileName(MaybeQuoted(StaticLibFiles.GetFirst));
+        while not SharedLibFiles.Empty do
+          begin
+            s:=SharedLibFiles.GetFirst;
+            if FindLibraryFile(s,target_info.staticClibprefix,target_info.staticClibext,s2) then
+              linkres.AddFileName(MaybeQuoted(s2))
+            else
+              begin
+                i:=Pos(target_info.sharedlibext,s);
+                if i>0 then Delete(s,i,255);
+                linkres.Add('-l'+s);
+              end;
+          end;
+        linkres.WriteToDisk;
+        linkres.Free;
+        result:=true;
+      end;
+
+
     Function TExternalLinkerWin.WriteResponseFile(isdll:boolean) : Boolean;
       Var
         linkres : TLinkRes;
@@ -1178,6 +1231,10 @@ implementation
         s,s2    : TCmdStr;
         i       : integer;
       begin
+{$if defined(llvm) and defined(x86_64)}
+        if cs_link_lld in current_settings.globalswitches then
+          exit(WriteLLDResponseFile);
+{$endif}
         WriteResponseFile:=False;
 
         if (cs_profile in current_settings.moduleswitches) then

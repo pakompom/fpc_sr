@@ -1507,7 +1507,17 @@ implementation
             tcb.queue_typeconvn(cpointerdef.getreusable(tstaticvarsym(item.sym).vardef),cpointerdef.getreusable(rawdatadef));
             tcb.queue_emit_staticvar(tstaticvarsym(item.sym));
             { value with which to initialize }
-            tcb.emit_tai(Tai_const.Create_sym(item.datalabel),item.datadef)
+            if item.dataoffset=0 then
+              tcb.emit_tai(Tai_const.Create_sym(item.datalabel),item.datadef)
+            else
+              begin
+                { High-level backends address string data inside a record,
+                  rather than placing a label after the BSTR length prefix. }
+                tcb.queue_init(voidpointertype);
+                tcb.queue_pointeraddn(tpointerdef(charpointertype),item.dataoffset);
+                tcb.queue_typeconvn(item.datadef,charpointertype);
+                tcb.queue_emit_asmsym(item.datalabel,tpointerdef(item.datadef).pointeddef);
+              end
           end;
         item:=TTCInitItem(item.Next);
       until item=nil;

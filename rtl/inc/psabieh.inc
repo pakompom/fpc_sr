@@ -113,12 +113,12 @@ function _Unwind_VRS_Get(context: PFPC_Unwind_Context; regclass: FPC_Unwind_VRS_
                                    value: pointer): FPC_Unwind_VRS_Result; cdecl; external;
 
 
-procedure _Unwind_SetGR(context:PFPC_Unwind_Context;index:cint; new_value:PtrUInt); inline;
+procedure _Unwind_SetGR(context:PFPC_Unwind_Context;index:longint; new_value:PtrUInt); inline;
   begin
     _Unwind_VRS_Set(context,FPC_UVRSC_CORE, index, FPC_UVRSD_UINT32, @new_Value);
   end;
 
-function _Unwind_GetGR(context:PFPC_Unwind_Context;index:cint):PtrUInt; inline;
+function _Unwind_GetGR(context:PFPC_Unwind_Context;index:longint):PtrUInt; inline;
   begin
     _Unwind_VRS_Get(context,FPC_UVRSC_CORE, index, FPC_UVRSD_UINT32, @result);
   end;
@@ -136,8 +136,8 @@ function _Unwind_GetIP(context:PFPC_Unwind_Context):PtrUInt;cdecl; inline;
 
 {$else}
 
-function _Unwind_GetGR(context:PFPC_Unwind_Context; index:cint):PtrUInt;cdecl;external;
-procedure _Unwind_SetGR(context:PFPC_Unwind_Context; index:cint; new_value:PtrUInt);cdecl;external;
+function _Unwind_GetGR(context:PFPC_Unwind_Context; index:longint):PtrUInt;cdecl;external;
+procedure _Unwind_SetGR(context:PFPC_Unwind_Context; index:longint; new_value:PtrUInt);cdecl;external;
 function _Unwind_GetIP(context:PFPC_Unwind_Context):PtrUInt;cdecl;external;
 procedure _Unwind_SetIP(context:PFPC_Unwind_Context; new_value:PtrUInt);cdecl;external;
 {$endif}
@@ -151,12 +151,12 @@ procedure DoUnHandledException; forward;
 type
   FPC_Unwind_Trace_Fn = function (_para1:PFPC_Unwind_Context; _para2:pointer):FPC_Unwind_Reason_Code;cdecl;
 
-function _Unwind_Backtrace(_para1:FPC_Unwind_Trace_Fn; _para2:pointer):FPC_Unwind_Reason_Code;cdecl;weakexternal;
+function _Unwind_Backtrace(_para1:FPC_Unwind_Trace_Fn; _para2:pointer):FPC_Unwind_Reason_Code;cdecl;{$ifdef WIN64}external{$else}weakexternal{$endif};
 
 { _Unwind_GetCFA is a gcc extension that can be called from within a personality  }
 { handler to get the CFA (stack pointer before call) of current frame. }
 { }
-function _Unwind_GetCFA(_para1:PFPC_Unwind_Context):PtrUInt;cdecl;weakexternal;
+function _Unwind_GetCFA(_para1:PFPC_Unwind_Context):PtrUInt;cdecl;{$ifdef WIN64}external{$else}weakexternal{$endif};
 
 const
   DW_EH_PE_absptr       = $00;
@@ -1255,3 +1255,15 @@ procedure fpc_raise_nested;compilerproc;
 procedure FPC_DummyPotentialRaise; nostackframe; assembler;
   asm
   end;
+
+{$ifdef WIN64}
+{$linklib unwind}
+function _GCC_specific_handler(rec, frame, context, dispatch, personality: pointer): longint;
+  cdecl; external;
+
+function _FPC_psabieh_personality_seh0(rec, frame, context, dispatch: pointer): longint;
+  cdecl; public;
+begin
+  result:=_GCC_specific_handler(rec,frame,context,dispatch,@_FPC_psabieh_personality_v0);
+end;
+{$endif}

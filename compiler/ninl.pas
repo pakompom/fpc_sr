@@ -4429,7 +4429,7 @@ implementation
               temp_pnode:=@left;
             if pc24_needs_extended(temp_pnode^) then
               begin
-                if target_info.cpu<>cpu_x86_64 then
+                if target_info.cpu<>systems.cpu_x86_64 then
                   begin
                     Comment(V_Error,'LEGACYPC24 native Extended Frac is not supported on this target');
                     exit(cerrornode.create);
@@ -4486,7 +4486,7 @@ implementation
               end;
             if pc24_needs_extended(temp_pnode^) then
               begin
-                if target_info.cpu<>cpu_x86_64 then
+                if target_info.cpu<>systems.cpu_x86_64 then
                   begin
                     Comment(V_Error,'LEGACYPC24 native Extended Sqr/Sqrt is not supported on this target');
                     exit(cerrornode.create);

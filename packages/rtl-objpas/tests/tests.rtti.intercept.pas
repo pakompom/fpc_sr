@@ -409,7 +409,7 @@ end;
 procedure TTestVirtualMethodInterceptor.TestIsOperatorAndParent;
 
 var
-  itc: TVirtualMethodInterceptor;
+  itc, nested: TVirtualMethodInterceptor;
   obj: TInterceptSample;
 
 begin
@@ -420,6 +420,20 @@ begin
     CheckTrue(obj is TInterceptSample, '"is" still holds after Proxify');
     CheckTrue(obj.InheritsFrom(TInterceptSample), 'InheritsFrom still holds');
     CheckTrue(itc.ProxyClass.ClassParent = TInterceptSample, 'Proxy descends from original');
+    nested:=CreateInterceptor(itc.ProxyClass);
+    try
+      nested.Proxify(obj);
+      try
+        CheckTrue(obj is TInterceptSample, 'Nested proxy retains original ancestry');
+        CheckTrue(obj.InheritsFrom(itc.ProxyClass), 'Nested proxy inherits its runtime parent');
+        CheckTrue(obj.InheritsFrom(nested.ProxyClass), 'Nested proxy retains its own identity');
+        CheckTrue(not TInterceptSample.InheritsFrom(itc.ProxyClass), 'Original does not inherit its proxy');
+      finally
+        nested.Unproxify(obj);
+      end;
+    finally
+      nested.Free;
+    end;
     itc.Unproxify(obj);
   finally
     obj.Free;

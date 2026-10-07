@@ -104,7 +104,13 @@
        vmtIntfTable            = vmtParent+sizeof(pointer)*8;
        vmtMsgStrPtr            = vmtParent+sizeof(pointer)*9;
        { methods }
+{$ifdef FPC_VMT_ANCESTRY}
+       vmtTypeDepth            = vmtParent+sizeof(pointer)*10;
+       vmtAncestors            = vmtTypeDepth+sizeof(SizeUInt);
+       vmtMethodStart          = vmtAncestors+sizeof(pointer);
+{$else FPC_VMT_ANCESTRY}
        vmtMethodStart          = vmtParent+sizeof(pointer)*10;
+{$endif FPC_VMT_ANCESTRY}
        vmtDestroy              = vmtMethodStart;
        vmtNewInstance          = vmtMethodStart+sizeof(codepointer);
        vmtFreeInstance         = vmtMethodStart+sizeof(codepointer)*2;
@@ -155,6 +161,12 @@
 
        PVmt = ^TVmt;
        PPVmt = ^PVmt;
+{$ifdef FPC_VMT_ANCESTRY}
+       { Compiler-emitted VMT references, indexed from TObject to this class.
+         Indirection is the same as vParentRef, including across units. }
+       PVmtAncestorTable = ^TVmtAncestorTable;
+       TVmtAncestorTable = array[0..0] of PPVmt;
+{$endif FPC_VMT_ANCESTRY}
        TVmt = record
          vInstanceSize: SizeInt;
          vInstanceSize2: SizeInt;
@@ -168,6 +180,10 @@
          vAutoTable: Pointer;
          vIntfTable: PInterfaceTable;
          vMsgStrPtr: pstringmessagetable;
+{$ifdef FPC_VMT_ANCESTRY}
+         vTypeDepth: SizeUInt;
+         vAncestors: PVmtAncestorTable;
+{$endif FPC_VMT_ANCESTRY}
          vDestroy: CodePointer;
          vNewInstance: CodePointer;
          vFreeInstance: CodePointer;

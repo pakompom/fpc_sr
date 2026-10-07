@@ -854,13 +854,14 @@ implementation
                 easily triggered in case the definition of the VMT would
                 change) }
               if (systemvmt.typ<>recorddef) or
-                 (trecorddef(systemvmt).symtable.SymList.count<>27) then
+                 (trecorddef(systemvmt).symtable.SymList.count<>29) then
                 Message1(cg_f_internal_type_does_not_match,'TVMT');
               { system.tvmt is a record that represents the VMT of TObject,
                 including its virtual methods. We only want the non-method
                 fields, as the methods will be added automatically based on
-                the VMT we generated here only add the 12 first fields }
-              for i:=0 to 11 do
+                the VMT we generated here: copy its 14 header fields,
+                including the depth and immutable ancestor table. }
+              for i:=0 to 13 do
                 begin
                   sym:=tsym(trecorddef(systemvmt).symtable.SymList[i]);
                   if sym.typ in [procsym,propertysym] then

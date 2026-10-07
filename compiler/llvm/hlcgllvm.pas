@@ -1258,7 +1258,11 @@ implementation
       signed,
       docheck: boolean;
     begin
-      docheck:=size.size>=ossinttype.size;
+      { Normal FPC arithmetic is at least native-sized. Delphi integer
+        promotion also permits checked 32-bit operations on 64-bit targets. }
+      docheck:=(size.size>=ossinttype.size) or
+        ((cs_delphi_integer32 in current_settings.localswitches) and
+         (size.size=4));
       if not setflags or
          not docheck then
         begin

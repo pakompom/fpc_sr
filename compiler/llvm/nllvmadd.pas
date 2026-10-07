@@ -102,7 +102,8 @@ implementation
                   inserttypeconv_internal(right,s80floattype);
                 end;
               exceptmode:=llvm_constrainedexceptmodestring;
-              if anf_pc24_lowered in addnodeflags then
+              if (anf_pc24_lowered in addnodeflags) and
+                 not(anf_pc24_exact_scale in addnodeflags) then
                 roundmode:='round.tonearest'
               else
                 roundmode:='round.dynamic';

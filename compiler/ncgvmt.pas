@@ -74,6 +74,7 @@ interface
         procedure genintmsgtab(tcb: ttai_typedconstbuilder; out lab: tasmlabel; out msginttabledef: trecorddef);
         procedure genpublishedmethodstable(tcb: ttai_typedconstbuilder; out lab: tasmlabel; out pubmethodsdef: trecorddef);
         procedure generate_field_table(tcb: ttai_typedconstbuilder; out lab: tasmlabel; out fieldtabledef: trecorddef);
+        procedure generate_ancestor_table(tcb: ttai_typedconstbuilder; out lab: tasmlabel; out tabledef: tarraydef; out depth: longint);
         procedure generate_abstract_stub(list:TAsmList;pd:tprocdef); virtual;
 {$ifdef WITHDMT}
         { generates a DMT for _class }
@@ -1041,11 +1042,53 @@ implementation
       end;
 
 
+    procedure TVMTWriter.generate_ancestor_table(tcb: ttai_typedconstbuilder;
+      out lab: tasmlabel; out tabledef: tarraydef; out depth: longint);
+      var
+        ancestor: tobjectdef;
+        datatcb: ttai_typedconstbuilder;
+        entrydef: tdef;
+
+      procedure emit_ancestor(c: tobjectdef);
+        var
+          sym: TAsmSymbol;
+        begin
+          if assigned(c.childof) and (oo_has_vmt in c.childof.objectoptions) then
+            emit_ancestor(c.childof);
+          { Use the same indirect VMT references as vParentRef. This also
+            supports imported classes on targets with indirect data imports. }
+          datatcb.queue_init(entrydef);
+          sym:=current_asmdata.RefAsmSymbol(c.vmt_mangledname,AT_DATA,true);
+          datatcb.queue_emit_asmsym(sym,tfieldvarsym(c.vmt_field).vardef);
+          if c.owner.moduleid<>current_module.moduleid then
+            current_module.add_extern_asmsym(sym);
+        end;
+
+      begin
+        depth:=0;
+        ancestor:=_class;
+        while assigned(ancestor.childof) and
+              (oo_has_vmt in ancestor.childof.objectoptions) do
+          begin
+            inc(depth);
+            ancestor:=ancestor.childof;
+          end;
+        entrydef:=search_system_type('PPVMT').typedef;
+        tabledef:=carraydef.getreusable(entrydef,depth+1);
+        tcb.start_internal_data_builder(current_asmdata.asmlists[al_const],
+          sec_rodata,_class.vmt_mangledname,datatcb,lab);
+        datatcb.maybe_begin_aggregate(tabledef);
+        emit_ancestor(_class);
+        datatcb.maybe_end_aggregate(tabledef);
+        tcb.finish_internal_data_builder(datatcb,lab,tabledef,sizeof(pint));
+      end;
+
+
     procedure TVMTWriter.writevmt;
       var
          methodnametable,intmessagetable,
          strmessagetable,classnamelabel,
-         fieldtablelabel : tasmlabel;
+         fieldtablelabel,ancestortablelabel : tasmlabel;
 {$ifdef vtentry}
          hs: string;
 {$endif vtentry}
@@ -1065,6 +1108,8 @@ implementation
          pstringmessagetabledef: tdef;
          vmttypesym: ttypesym;
          vmtdef: tdef;
+         ancestortabledef: tarraydef;
+         ancestrydepth: longint;
          sym : TAsmSymbol;
       begin
 {$ifdef WITHDMT}
@@ -1106,6 +1151,7 @@ implementation
 
             genpublishedmethodstable(tcb,methodnametable,methodnametabledef);
             generate_field_table(tcb,fieldtablelabel,fieldtabledef);
+            generate_ancestor_table(tcb,ancestortablelabel,ancestortabledef,ancestrydepth);
 
             { generate message and dynamic tables }
             if (oo_has_msgstr in _class.objectoptions) then
@@ -1217,6 +1263,10 @@ implementation
               end
             else
               tcb.emit_tai(Tai_const.Create_nil_dataptr,pstringmessagetabledef);
+            { Constant-time class ancestry; the table runs from root to self. }
+            tcb.emit_ord_const(ancestrydepth,sizeuinttype);
+            tcb.queue_init(search_system_type('PVMTANCESTORTABLE').typedef);
+            tcb.queue_emit_asmsym(ancestortablelabel,ancestortabledef);
           end;
          { write virtual methods }
          writevirtualmethods(tcb);

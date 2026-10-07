@@ -182,7 +182,9 @@ interface
          { Explicit per-operation PC24 rounding for hardware floating point. }
          cs_legacy_pc24,
          { Delphi 2007 expression and argument evaluation order. }
-         cs_delphi_order
+         cs_delphi_order,
+         { Delphi integer expression promotion, independent of target word size. }
+         cs_delphi_integer32
        );
        tlocalswitches = set of tlocalswitch;
 

@@ -104,7 +104,14 @@ interface
       which was determined during an earlier typecheck pass (because the value
       may e.g. be a parameter to a call, which needs to be of the declared
       parameter type) }
-    function create_simplified_ord_const(const value: tconstexprint; def: tdef; forinline, rangecheck: boolean): tnode;
+    function create_simplified_ord_const(const value: tconstexprint; def: tdef; forinline, rangecheck: boolean; delphi32: boolean = false): tnode;
+
+    { Delphi promotes arithmetic to at least 32 bits, using the common range
+      of its operands. Returns nil when either operand has an explicit wider
+      type: Int64, NativeInt, pointer-sized integers and Currency keep their
+      existing rules. Constants contribute their value, not an artificial
+      signed range inferred from their smallest storage type. }
+    function delphi_integer_arithmetic_type(left,right: tnode): tdef;
 
     { returns true if n is only a tree of administrative nodes
       containing no code }
@@ -1128,12 +1135,56 @@ implementation
       end;
 
 
-    function create_simplified_ord_const(const value: tconstexprint; def: tdef; forinline, rangecheck: boolean): tnode;
+    function create_simplified_ord_const(const value: tconstexprint; def: tdef; forinline, rangecheck: boolean; delphi32: boolean): tnode;
       begin
+        { Delphi diagnoses overflowing constant arithmetic even with Q-.
+          Optimizer folding instead retains the already chosen runtime width. }
+        if delphi32 and not forinline and assigned(def) and is_integer(def) and
+           (def.size=4) and
+           ((value<torddef(def).low) or (value>torddef(def).high)) then
+          Message(parser_e_arithmetic_operation_overflow);
         if not forinline then
           result:=genintconstnode(value)
         else
           result:=cordconstnode.create(value,def,rangecheck);
+      end;
+
+
+    function delphi_integer_arithmetic_type(left,right: tnode): tdef;
+      var
+        llow,lhigh,rlow,rhigh: tconstexprint;
+      begin
+        result:=nil;
+        if not is_integer(left.resultdef) or not is_integer(right.resultdef) or
+           (left.resultdef.size>4) or (right.resultdef.size>4) then
+          exit;
+        if is_constintnode(left) then
+          begin
+            llow:=tordconstnode(left).value;
+            lhigh:=llow;
+          end
+        else
+          begin
+            llow:=torddef(left.resultdef).low;
+            lhigh:=torddef(left.resultdef).high;
+          end;
+        if is_constintnode(right) then
+          begin
+            rlow:=tordconstnode(right).value;
+            rhigh:=rlow;
+          end
+        else
+          begin
+            rlow:=torddef(right.resultdef).low;
+            rhigh:=torddef(right.resultdef).high;
+          end;
+        if (llow>=low(longint)) and (rlow>=low(longint)) and
+           (lhigh<=high(longint)) and (rhigh<=high(longint)) then
+          result:=s32inttype
+        else if (llow>=0) and (rlow>=0) then
+          result:=u32inttype
+        else
+          result:=s64inttype;
       end;
 
 

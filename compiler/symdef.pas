@@ -8550,8 +8550,9 @@ implementation
         { for offset of methods for classes, see rtl/inc/objpash.inc }
         case objecttype of
         odt_class:
-          { the +2*sizeof(pint) is size and -size }
-          vmtmethodoffset:=index*voidcodepointertype.size+10*voidpointertype.size+2*sizeof(pint);
+          { size, -size and ancestry depth are native integers; the other
+            header entries are data pointers (which may have another size). }
+          vmtmethodoffset:=index*voidcodepointertype.size+11*voidpointertype.size+3*sizeof(pint);
         odt_helper,
         odt_objcclass,
         odt_objcprotocol:

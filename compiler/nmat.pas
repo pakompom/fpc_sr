@@ -237,7 +237,8 @@ implementation
                     else
                       result:=create_simplified_ord_const(lv mod rv,resultdef,forinline,false);
                   divn:
-                    result:=create_simplified_ord_const(lv div rv,resultdef,forinline,cs_check_overflow in localswitches);
+                    result:=create_simplified_ord_const(lv div rv,resultdef,forinline,cs_check_overflow in localswitches,
+                      cs_delphi_integer32 in localswitches);
                   else
                     internalerror(2019050519);
                 end;
@@ -325,9 +326,12 @@ implementation
            not compatible with tconst node
            as in bug report 21566 PM }
 
-         result:=simplify(false);
-         if assigned(result) then
-           exit;
+         if not(cs_delphi_integer32 in localswitches) then
+           begin
+             result:=simplify(false);
+             if assigned(result) then
+               exit;
+           end;
 
          rd:=torddef(right.resultdef);
          ld:=torddef(left.resultdef);
@@ -340,6 +344,16 @@ implementation
          { Additionally, do the same for cardinal/qwords and other positive types, but    }
          { always in a way that a smaller type is converted to a bigger type              }
          { (webtbs/tw8870)                                                                }
+         if (cs_delphi_integer32 in localswitches) and
+            is_integer(ld) and is_integer(rd) and
+            (ld.size<=4) and (rd.size<=4) then
+           begin
+             nd:=torddef(delphi_integer_arithmetic_type(left,right));
+             inserttypeconv(left,nd);
+             inserttypeconv(right,nd);
+             resultdef:=nd;
+           end
+         else
          if (rd.ordtype in [u8bit,u16bit,u32bit,u64bit]) and
             ((is_constintnode(left) and
               (tordconstnode(left).value >= 0) and
@@ -954,6 +968,15 @@ implementation
                end;
 
              inserttypeconv(right,sinttype);
+             if (cs_delphi_integer32 in localswitches) and
+                is_integer(left.resultdef) then
+               begin
+                 { Delphi masks the count by the operand width. In particular,
+                   LLVM shifts by that width or more are otherwise undefined. }
+                 right:=caddnode.create_internal(andn,right,
+                   cordconstnode.create(left.resultdef.size*8-1,sinttype,false));
+                 typecheckpass(right);
+               end;
            end;
 
          resultdef:=left.resultdef;
@@ -1026,7 +1049,8 @@ implementation
         { constant folding }
         if is_constintnode(left) then
           begin
-             result:=create_simplified_ord_const(-tordconstnode(left).value,resultdef,forinline,cs_check_overflow in localswitches);
+             result:=create_simplified_ord_const(-tordconstnode(left).value,resultdef,forinline,cs_check_overflow in localswitches,
+               cs_delphi_integer32 in localswitches);
              exit;
           end;
         if is_constrealnode(left) then
@@ -1134,6 +1158,18 @@ implementation
          set_varstate(left,vs_read,[vsf_must_be_valid]);
          if codegenerror then
            exit;
+
+         if (cs_delphi_integer32 in localswitches) and
+            is_integer(left.resultdef) and (left.resultdef.size<=4) then
+           begin
+             resultdef:=delphi_integer_arithmetic_type(left,left);
+             { Negating Cardinal needs a signed type covering its full range. }
+             if resultdef=u32inttype then
+               resultdef:=s64inttype;
+             inserttypeconv(left,resultdef);
+             result:=simplify(false);
+             exit;
+           end;
 
          result:=simplify(false);
          if assigned(result) then
@@ -1286,6 +1322,15 @@ implementation
         if codegenerror then
           exit;
 
+        if (cs_delphi_integer32 in localswitches) and
+           is_integer(left.resultdef) and (left.resultdef.size<=4) and
+           not is_constintnode(left) then
+          begin
+            inserttypeconv(left,delphi_integer_arithmetic_type(left,left));
+            result:=left;
+            left:=nil;
+          end
+        else
         if is_constintnode(left) or
            is_constrealnode(left) or
            (left.resultdef.typ=floatdef) or

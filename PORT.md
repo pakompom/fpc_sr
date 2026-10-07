@@ -23,9 +23,17 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
 
 - `{$DELPHIORDER ON/OFF}` independently selects Delphi 2007 operand and argument
   evaluation order. Source scheduling information survives lowering, inlining
-  and unit files; the target calling ABI is unchanged. Either directive can be
-  used alone. Compiler regressions follow the standard `tests/test/tpc24*` and
-  `tests/test/tdelphiorder*` test-suite conventions.
+  and unit files; the target calling ABI is unchanged.
+
+- `{$DELPHIINTEGER32 ON/OFF}` independently selects Delphi's 32-bit minimum
+  integer arithmetic width. Explicit wider operands retain their width;
+  overflow checks, range checks and mixed signedness remain supported. All
+  three compatibility directives default to off and can be used separately.
+
+- Native class VMTs contain immutable ancestry tables for constant-time class
+  tests. Runtime-created VMTs without a table retain parent-chain lookup.
+  This changes the class ABI: rebuild the compiler, RTL, packages and Pascal
+  shared libraries together. The unit-file version rejects older PPUs.
 
 - RTL build switches `FPC_USE_SIMPLE_RANDOM` and `FPC_USE_PC24_RANDOM` select
   Delphi's generator and PC24 random-result behavior. `FPC_USE_PC24_MATH` selects

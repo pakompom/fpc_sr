@@ -446,6 +446,12 @@ unit scandir;
       end;
 
 
+    procedure dir_delphi_integer32;
+      begin
+        do_localswitch(cs_delphi_integer32);
+      end;
+
+
     procedure dir_excessprecision;
       begin
         do_localswitch(cs_excessprecision);
@@ -2241,6 +2247,7 @@ unit scandir;
         AddDirective('ERRORC',directive_mac, @dir_error);
         AddDirective('LEGACYPC24',directive_all, @dir_legacy_pc24);
         AddDirective('DELPHIORDER',directive_all, @dir_delphi_order);
+        AddDirective('DELPHIINTEGER32',directive_all, @dir_delphi_integer32);
         AddDirective('EXCESSPRECISION',directive_all, @dir_excessprecision);
         AddDirective('EXTENDEDSYNTAX',directive_all, @dir_extendedsyntax);
         AddDirective('EXTERNALSYM',directive_all, @dir_externalsym);

@@ -8877,6 +8877,11 @@ begin
   { make the proxy class descend from the original class so that 'is'/'as' and
     InheritsFrom keep working for the original class and its ancestors }
   PVmt(fProxyVmt)^.vParentRef:=PPVmt(@fOriginalClass);
+{$ifdef FPC_VMT_ANCESTRY}
+  { This new class has a different identity and parent. The copied static
+    ancestry table belongs to the original class; use the parent walk. }
+  PVmt(fProxyVmt)^.vAncestors:=nil;
+{$endif FPC_VMT_ANCESTRY}
 
   { override every virtual method that has RTTI with an interception thunk. 
     The childmost declaration is encountered first (GetMethods lists self before

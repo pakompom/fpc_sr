@@ -39,7 +39,9 @@ interface
          { Keep one hardware rounding boundary, including across PPUs/inlining. }
          anf_pc24_lowered,
          { Source operands have already been captured in Delphi order. }
-         anf_delphi_ordered
+         anf_delphi_ordered,
+         { Exact scaling keeps the Double helper's rounding environment. }
+         anf_pc24_exact_scale
        );
 
        TAddNodeFlags = set of TAddNodeFlag;
@@ -204,18 +206,37 @@ const
       end;
 
 
+    function pc24_is_double_power_of_two(p: tnode): boolean;
+      begin
+        result:=(p.nodetype=realconstn) and
+          trealconstnode(p).pc24_value.valid and
+          (trealconstnode(p).pc24_value.significand=qword($8000000000000000)) and
+          pc24_exact_double(trealconstnode(p).pc24_value);
+      end;
+
+
     function pc24_is_single_operand(p: tnode): boolean;
       begin
+        if not assigned(p) then
+          exit(false);
+        { A generated statement block returns its last expression. Prefix
+          statements affect evaluation order, but not that value's precision. }
+        if p.nodetype=blockn then
+          exit(pc24_is_single_operand(GetLastStatement(p)));
         { Widening a known Single does not create more significant bits. This
           includes a PC24 result wrapped back into the source expression type. }
         if (p.nodetype=typeconvn) and
            is_fpu(p.resultdef) and
-           is_fpu(ttypeconvnode(p).left.resultdef) and
+           (is_fpu(ttypeconvnode(p).left.resultdef) or
+            is_integer(ttypeconvnode(p).left.resultdef)) and
            (p.resultdef.size>=ttypeconvnode(p).left.resultdef.size) then
           exit(pc24_is_single_operand(ttypeconvnode(p).left));
         if p.nodetype=realconstn then
           exit(pc24_exact_single(trealconstnode(p).pc24_value));
-        result:=is_single(p.resultdef);
+        { Every 8/16-bit integer is exactly representable as Single. Keep
+          wider integer loads exact until their original arithmetic executes. }
+        result:=is_single(p.resultdef) or
+          (is_integer(p.resultdef) and (p.resultdef.size<=2));
       end;
 
 
@@ -243,7 +264,9 @@ const
           information. Remove them explicitly: LLVM constrained conversions
           intentionally cannot optimize the round trip away. }
         while (p.nodetype=typeconvn) and is_fpu(p.resultdef) and
-              is_fpu(ttypeconvnode(p).left.resultdef) and
+              (is_fpu(ttypeconvnode(p).left.resultdef) or
+               (is_integer(ttypeconvnode(p).left.resultdef) and
+                (ttypeconvnode(p).left.resultdef.size<=2))) and
               (p.resultdef.size>=ttypeconvnode(p).left.resultdef.size) do
           begin
             operand:=ttypeconvnode(p).left;
@@ -255,11 +278,12 @@ const
       end;
 
 
-    function delphi_capture_first(var left,right: tnode; firstleft: boolean;
+    function delphi_capture_first(var left,right: tnode; firstleft,preserve_pc24: boolean;
       out statements: tstatementnode): tnode;
       var
         first: pnode;
         temp: ttempcreatenode;
+        sourcedef,tempdef: tdef;
       begin
         result:=nil;
         statements:=nil;
@@ -267,10 +291,20 @@ const
         if firstleft then first:=@left else first:=@right;
         if is_constnode(first^) then exit;
         result:=internalstatements(statements);
-        temp:=ctempcreatenode.create(first^.resultdef,first^.resultdef.size,tt_persistent,true);
+        sourcedef:=first^.resultdef;
+        tempdef:=sourcedef;
+        { Keep proven PC24 precision across ordering temporaries. Otherwise a
+          later operation sees an arbitrary Double and needs midpoint/tail
+          correction even though this value has already rounded to Single.
+          Retain the original expression, including explicit conversions. }
+        if preserve_pc24 and is_fpu(sourcedef) and pc24_is_single_operand(first^) then
+          tempdef:=s32floattype;
+        temp:=ctempcreatenode.create(tempdef,tempdef.size,tt_persistent,true);
         addstatement(statements,temp);
         addstatement(statements,cassignmentnode.create(ctemprefnode.create(temp),first^));
         first^:=ctemprefnode.create(temp);
+        if tempdef<>sourcedef then
+          first^:=ctypeconvnode.create_internal(first^,sourcedef);
         { The final expression consumes the captured normal temporary. }
         addstatement(statements,ctempdeletenode.create_normal_temp(temp));
       end;
@@ -293,7 +327,8 @@ const
           exit;
         source_demand:=delphi_source_demand(self);
         source_extended:=delphi_source_extended(self);
-        sequence:=delphi_capture_first(left,right,delphi_left_first(left,right),statements);
+        sequence:=delphi_capture_first(left,right,delphi_left_first(left,right),
+          cs_legacy_pc24 in localswitches,statements);
         if not assigned(sequence) then exit;
         op:=caddnode.create(nodetype,left,right);
         op.localswitches:=localswitches;
@@ -551,6 +586,21 @@ const
             op.localswitches:=localswitches;
             include(op.addnodeflags,anf_pc24_lowered);
             result:=op;
+          end
+        else if ((nodetype=muln) and
+                 (pc24_is_double_power_of_two(left) or pc24_is_double_power_of_two(right))) or
+                ((nodetype=slashn) and pc24_is_double_power_of_two(right)) then
+          begin
+            { Scaling by a representable power of two is exact throughout the
+              Single rounding range, so the midpoint residual is always zero.
+              Keep the original Double operation and final Single conversion,
+              including their behavior at Double underflow/overflow and NaNs. }
+            inserttypeconv(left,s64floattype);
+            inserttypeconv(right,s64floattype);
+            op:=caddnode.create(nodetype,left,right);
+            op.localswitches:=localswitches;
+            op.addnodeflags:=op.addnodeflags+[anf_pc24_lowered,anf_pc24_exact_scale];
+            result:=ctypeconvnode.create_internal(op,s32floattype);
           end
         else
           begin
@@ -1221,7 +1271,8 @@ const
                    else
                      begin
                        if is_integer(ld) then
-                         t:=create_simplified_ord_const(v,resultdef,forinline,cs_check_overflow in localswitches)
+                         t:=create_simplified_ord_const(v,resultdef,forinline,cs_check_overflow in localswitches,
+                           cs_delphi_integer32 in localswitches)
                        else
                          t:=cordconstnode.create(v,resultdef,(ld.typ<>enumdef));
                      end;
@@ -1253,7 +1304,8 @@ const
                    else
                      begin
                        if is_integer(ld) then
-                         t:=create_simplified_ord_const(v,resultdef,forinline,cs_check_overflow in localswitches)
+                         t:=create_simplified_ord_const(v,resultdef,forinline,cs_check_overflow in localswitches,
+                           cs_delphi_integer32 in localswitches)
                        else
                          t:=cordconstnode.create(v,resultdef,(ld.typ<>enumdef));
                      end;
@@ -1283,7 +1335,8 @@ const
                              v:=v div 10000;
                          end;
 
-                       t:=create_simplified_ord_const(v,resultdef,forinline,cs_check_overflow in localswitches);
+                       t:=create_simplified_ord_const(v,resultdef,forinline,cs_check_overflow in localswitches,
+                           cs_delphi_integer32 in localswitches);
 
                        if is_currency(resultdef) then
                          Include(t.flags,nf_is_currency);
@@ -3185,6 +3238,18 @@ const
                      if (torddef(rd).ordtype<>scurrency) then
                        inserttypeconv(right,s64currencytype);
                    end;
+               end
+             { Delphi arithmetic uses a 32-bit minimum even on 64-bit targets.
+               Keep wide operands, pointer arithmetic and bitwise operations
+               on their existing type-selection paths. }
+             else if (cs_delphi_integer32 in localswitches) and
+                     (nodetype in [addn,subn,muln]) and
+                     is_integer(ld) and is_integer(rd) and
+                     (ld.size<=4) and (rd.size<=4) then
+               begin
+                 nd:=delphi_integer_arithmetic_type(left,right);
+                 inserttypeconv(left,nd);
+                 inserttypeconv(right,nd);
                end
              { leave some constant integer expressions alone in case the
                resultdef of the integer types doesn't influence the outcome,

@@ -4986,6 +4986,10 @@ begin
   def_system_macro('FPC_SETBASE_USED');
   def_system_macro('FPC_ALIGNED_THREADVARTABLES');
   def_system_macro('FPC_INITFINAL_HASUNITNAME');
+  { Native class VMTs contain immutable ancestry metadata. Keep this a
+    compiler capability so an older bootstrap compiler uses the old RTL VMT. }
+  if not(target_info.system in systems_managed_vm) then
+    def_system_macro('FPC_VMT_ANCESTRY');
 
   { don't remove this, it's also for fpdoc necessary (FK) }
   def_system_macro('FPC_HAS_FEATURE_SUPPORT');

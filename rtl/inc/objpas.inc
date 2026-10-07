@@ -873,15 +873,33 @@ end;
            vmt: PVmt;
 
         begin
-           if assigned(aclass) then
+           InheritsFrom:=False;
+           if not assigned(aclass) then
+             exit;
+           vmt:=PVmt(self);
+           while assigned(vmt) do
              begin
-               vmt:=PVmt(self);
-               while assigned(vmt) and (vmt <> PVmt(aclass)) do
-                 vmt := vmt^.vParent;
-               InheritsFrom := (vmt = PVmt(aclass));
-             end
-           else
-             inheritsFrom := False;
+               if vmt=PVmt(aclass) then
+                 exit(True);
+{$ifdef FPC_VMT_ANCESTRY}
+               { Runtime-created VMTs can omit the table. Walk their parents
+                 until both classes have compiler-emitted ancestry metadata. }
+               if assigned(vmt^.vAncestors) and assigned(PVmt(aclass)^.vAncestors) then
+                 begin
+                   { Equal-depth classes can only match by identity, already
+                     checked above. Only a deeper class needs a table lookup. }
+                   if vmt^.vTypeDepth>PVmt(aclass)^.vTypeDepth then
+                     begin
+                       { The variable-sized table has vTypeDepth+1 entries. }
+{$push}{$R-}
+                       InheritsFrom:=vmt^.vAncestors^[PVmt(aclass)^.vTypeDepth]^=PVmt(aclass);
+{$pop}
+                     end;
+                   exit;
+                 end;
+{$endif FPC_VMT_ANCESTRY}
+               vmt:=vmt^.vParent;
+             end;
         end;
 
       class function TObject.stringmessagetable : pstringmessagetable;

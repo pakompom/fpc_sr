@@ -342,7 +342,20 @@ implementation
     function remove_pc24_widening(var p:tnode; destination:tdef):boolean;
       var
         operand: tnode;
+        last: tstatementnode;
       begin
+        { Ordering blocks return their final expression. Remove only the same
+          generated widening we would remove outside a block, keeping every
+          prefix statement and explicit source conversion. }
+        if is_single(destination) and (p.nodetype=blockn) then
+          begin
+            last:=laststatement(tblocknode(p));
+            result:=assigned(last) and assigned(last.left) and
+              remove_pc24_widening(last.left,destination);
+            if result then
+              p.resultdef:=destination;
+            exit;
+          end;
         { PC24 keeps the source expression type using an internal widening
           wrapper. A Single consumer can use its already-rounded operand
           directly, even when the consumer performs conversion implicitly.

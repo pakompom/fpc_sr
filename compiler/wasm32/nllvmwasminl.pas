@@ -161,6 +161,8 @@ begin
           in_wasm32_memory_atomic_wait32: result:=ccallnode.createintern('llvm_wasm_memory_atomic_wait32',left);
           in_wasm32_memory_atomic_wait64: result:=ccallnode.createintern('llvm_wasm_memory_atomic_wait64',left);
           in_wasm32_memory_atomic_notify: result:=ccallnode.createintern('llvm_wasm_memory_atomic_notify',left);
+          else
+            internalerror(2026100809);
         end;
         left:=nil;
       end;

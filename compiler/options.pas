@@ -1579,6 +1579,7 @@ end;
 procedure TOption.interpret_option(const opt:TCmdStr;ispara:boolean);
 var
   more : TCmdStr;
+  jobcount, jobcode: longint;
 
 begin
   if opt='' then
@@ -1625,6 +1626,14 @@ begin
            'h' : Interpret_H_l(more);
            'i' : Interpret_I_l(more);
            'I' : Interpret_I_U(more,ispara);
+           'j' :
+             begin
+               val(more,jobcount,jobcode);
+               if (jobcode<>0) or (jobcount<1) or (jobcount>256) then
+                 IllegalPara(opt)
+               else
+                 assemblerjobs:=jobcount;
+             end;
            'k' : Interpret_K_l(opt,more);
            'l' : Interpret_L_l(opt,more);
            'm' : Interpret_M_l(opt,more);

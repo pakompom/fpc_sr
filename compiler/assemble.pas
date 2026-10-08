@@ -257,7 +257,7 @@ Implementation
 {$ifdef hasunix}
       unix,
 {$endif}
-      cutils,cfileutl,
+      cutils,cfileutl,asjobs,
 {$ifdef memdebug}
       cclasses,
 {$endif memdebug}
@@ -624,6 +624,9 @@ Implementation
         tempFileName: TPathStr;
 {$endif}
       begin
+        { A unit may be compiled again after a circular dependency changes.
+          Its previous child must finish before the IR file is replaced. }
+        WaitForAssemblerFile(owner.AsmFileName);
         if owner.SmartAsm then
          owner.NextSmartName(Aplace);
 {$ifdef hasamiga}
@@ -785,6 +788,7 @@ Implementation
       begin
 {$ifdef hasunix}
         DoPipe:=(cs_asm_pipe in current_settings.globalswitches) and
+                not ((assemblerjobs>1) and (af_llvm in asminfo^.flags) and ParallelAssemblerSupported) and
                 (([cs_asm_extern,cs_asm_leave,cs_assemble_on_target] * current_settings.globalswitches) = []) and
                 ((asminfo^.id in [as_gas,as_ggas,as_darwin,as_powerpc_xcoff,as_clang_gas,as_clang_llvm,as_clang_llvm_darwin,as_solaris_as,as_clang_asdarwin]));
 {$else hasunix}
@@ -928,6 +932,10 @@ Implementation
 
 
     Function TExternalAssembler.DoAssemble:boolean;
+      var
+        commands: TAssemblerCommands;
+        assembler, objectname, unitppu: ansistring;
+        count: longint;
       begin
         result:=true;
         if DoPipe then
@@ -942,6 +950,29 @@ Implementation
            else
            Message1(exec_i_assembling,name);
          end;
+
+        assembler:=FindAssembler;
+        if (assemblerjobs>1) and ParallelAssemblerSupported and
+           (af_llvm in asminfo^.flags) and not SmartAsm and
+           not (cs_create_smart in current_settings.moduleswitches) and
+           (([cs_asm_extern,cs_assemble_on_target]*current_settings.globalswitches)=[]) then
+          begin
+            objectname:=ObjFileName;
+            unitppu:='';
+            if current_module.is_unit then
+              unitppu:=current_module.ppufilename;
+            commands:=nil;
+            repeat
+              count:=length(commands);
+              SetLength(commands,count+1);
+              commands[count].executable:=assembler;
+              commands[count].parameters:=MakeCmdLine;
+              commands[count].outputname:=ObjFileName;
+            until not RerunAssembler;
+            QueueAssembler(AsmFileName,objectname,unitppu,commands,
+              cs_asm_leave in current_settings.globalswitches);
+            exit(ErrorCount=0);
+          end;
 
         repeat
           result:=CallAssembler(FindAssembler,MakeCmdLine)

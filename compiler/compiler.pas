@@ -48,7 +48,7 @@ uses
 {$ENDIF}
   verbose,comphook,systems,
   cutils,cfileutl,cclasses,globals,options,switches,fmodule,parser,symtable,
-  assemble,link,dbgbase,import,export,tokens,wpo
+  assemble,asjobs,link,dbgbase,import,export,tokens,wpo
   { cpu parameter handling }
   ,cpupara
   { procinfo stuff }
@@ -185,6 +185,7 @@ begin
   if CompilerInitedAfterArgs then
    begin
      CompilerInitedAfterArgs:=false;
+     DoneAssemblerJobs;
      DoneParser;
      DoneImport;
      DoneExport;
@@ -312,6 +313,8 @@ begin
          main_module:=m;
          task_handler.addmodule(m);
          task_handler.processqueue;
+         { Includes unit-only and -Cn compilations, which never enter a linker. }
+         WaitForAssemblerJobs;
          end;
 
 

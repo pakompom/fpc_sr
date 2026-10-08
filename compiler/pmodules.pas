@@ -48,7 +48,7 @@ implementation
        aasmtai,aasmdata,aasmbase,aasmcpu,
        cgbase,ngenutil,
        nbas,nutils,ncgutil,
-       link,assemble,import,export,gendef,ppu,comprsrc,dbgbase,
+       link,assemble,asjobs,import,export,gendef,ppu,comprsrc,dbgbase,
        cresstr,procinfo,
        objcgutl,
        pkgutil,
@@ -2320,6 +2320,7 @@ type
              { create the executable when we are at level 1 }
              if (curr.is_initial) then
                begin
+                 WaitForAssemblerJobs;
                  { create global resource file by collecting all resource files }
                  CollectResourceFiles;
                  { write .def file }
@@ -2376,6 +2377,7 @@ type
         hp,hp2 : tmodule;
 
       begin
+            WaitForAssemblerJobs;
             { create global resource file by collecting all resource files }
             CollectResourceFiles;
             { write .def file }

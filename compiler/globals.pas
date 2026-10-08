@@ -333,6 +333,7 @@ Const
 {$endif defined(XTENSA) or defined(RISCV32) or defined(ARM)}
        { external assembler extra option }
        asmextraopt       : string;
+       assemblerjobs     : longint;
 
        { things specified with parameters }
        paralinkoptions   : TCmdStr;
@@ -1795,6 +1796,7 @@ implementation
         do_release:=false;
         do_make:=true;
         codegenerror:=false;
+        assemblerjobs:=1;
         global_unit_count:=0;
 
         { Output }

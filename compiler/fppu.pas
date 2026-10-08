@@ -153,7 +153,7 @@ implementation
 
 uses
   SysUtils,
-  cfileutl,
+  cfileutl,asjobs,
   systems,version,options,
   symtable, symsym,
   wpoinfo,
@@ -1694,7 +1694,7 @@ var
            headerflags:=headerflags or uf_fpu_emulation;
 {$endif cpufpemu}
          { create new ppufile }
-         ppufile:=tcompilerppufile.create(ppufilename);
+         ppufile:=tcompilerppufile.create(AssemblerPPUPath(objfilename,ppufilename));
          if not ppufile.createfile then
           Message(unit_f_ppu_cannot_write);
 
@@ -1908,6 +1908,7 @@ var
 {$endif Test_Double_checksum_write}
 
          discardppu;
+         AssemblerPPUWritten(objfilename);
       end;
 
 

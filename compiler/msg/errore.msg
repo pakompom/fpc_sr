@@ -4260,6 +4260,7 @@ L*2il_Return list of supported LLVM/Xcode versions by the LLVM backend
 **2iw_Return list of supported whole program optimizations
 **2iW_Return full compiler version
 **1I<x>_Add <x> to include path
+L*1j<n>_Run up to <n> LLVM assembler processes on Unix hosts (default: 1)
 **1k<x>_Pass <x> to the linker
 **1l_Write logo
 **1M<x>_Set language mode to <x> / enable modeswitch <x> (see option -im)

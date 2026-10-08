@@ -527,8 +527,10 @@ implementation
 
     procedure tcpuprocinfo.generate_exit_label(list: tasmlist);
       begin
+{$ifndef llvm}
         if not (po_assembler in current_procinfo.procdef.procoptions) then
           list.concat(taicpu.op_none(a_end_block));
+{$endif}
         inherited generate_exit_label(list);
       end;
 
@@ -1173,6 +1175,13 @@ implementation
         localslist: TAsmList;
         labels_resolved, has_goto: Boolean;
       begin
+{$ifdef llvm}
+        if not (po_assembler in procdef.procoptions) then
+          begin
+            inherited postprocess_code;
+            exit;
+          end;
+{$endif}
         if po_assembler in procdef.procoptions then
           begin
             postprocess_code_assembler;

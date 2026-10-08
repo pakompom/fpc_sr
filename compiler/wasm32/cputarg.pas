@@ -31,9 +31,9 @@ implementation
     uses
       systems { prevent a syntax error when nothing is included }
 
-{$ifndef NOOPT}
+{$if not defined(NOOPT) and not defined(llvm)}
       ,aoptcpu
-{$endif NOOPT}
+{$endif}
 
 {**************************************
              Targets

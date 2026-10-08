@@ -20,10 +20,17 @@
 procedure fpc_wasm32_init_tls(memory: Pointer);external name '__wasm_init_tls';
 {$endif FPC_WASM_THREADS}
 
+{$ifdef CPULLVM}
+procedure fpc_wasm_invoke_helper(CodeAddress: CodePointer; Args: Pointer; Result: Pointer);
+begin
+  fpc_wasm32_unreachable;
+end;
+{$else CPULLVM}
 procedure fpc_wasm_invoke_helper(CodeAddress: CodePointer; Args: Pointer; Result: Pointer);assembler;nostackframe;
 asm
   unreachable
 end;
+{$endif CPULLVM}
 
 {$define FPC_SYSTEM_HAS_FPC_CPUINIT}
 procedure fpc_cpuinit;
@@ -76,10 +83,19 @@ function get_caller_frame(framebp:pointer;addr:pointer=nil):pointer;
 
 
 {$define FPC_SYSTEM_HAS_SPTR}
+{$ifdef CPULLVM}
+function llvm_wasm_frameaddress(level: longint): pointer; external name 'llvm.frameaddress';
+
+function Sptr : pointer;
+  begin
+    Result:=llvm_wasm_frameaddress(0);
+  end;
+{$else CPULLVM}
 function Sptr : pointer; assembler; nostackframe;
   asm
     global.get $__stack_pointer
   end;
+{$endif CPULLVM}
 
 
 {$ifdef VER3_2}

@@ -1340,10 +1340,14 @@ implementation
               (pi_needs_implicit_finally in flags))) or
              (pi_has_except_table_data in flags) then
            begin
+{$if defined(llvm) and defined(wasm32)}
+             procdef.personality:=search_system_proc('FPC_PSABI_WASM_PERSONALITY');
+{$else}
              if target_info.system=system_x86_64_win64 then
                procdef.personality:=search_system_proc('_FPC_PSABIEH_PERSONALITY_SEH0')
              else
                procdef.personality:=search_system_proc('_FPC_PSABIEH_PERSONALITY_V0');
+{$endif}
            end;
       end;
 
@@ -2331,7 +2335,9 @@ implementation
             delete_marker(stackcheck_asmnode);
             delete_marker(init_asmnode);
 
-{$ifndef NoOpt}
+{$if not defined(NoOpt) and not defined(llvm)}
+            { LLVM performs instruction optimization and scheduling after IR
+              generation. The native optimizers require target instructions. }
             if not(cs_no_regalloc in current_settings.globalswitches) then
               begin
                 if (cs_opt_level1 in current_settings.optimizerswitches) and

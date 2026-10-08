@@ -26,7 +26,7 @@ unit nllvmutil;
 interface
 
   uses
-    globtype,cclasses,
+    globtype,cclasses,fmodule,
     aasmbase,aasmdata,aasmllvmmetadata, ngenutil,
     symtype,symconst,symsym,symdef,node;
 
@@ -38,6 +38,7 @@ interface
       class procedure InsertUsedList(var usedsyms: tfpobjectlist; const usedsymsname: TSymStr);
       class procedure InsertInitFiniList(var procdefs: tfplist; const initfinisymsname: TSymStr);
       class procedure InsertAsanGlobals;
+      class procedure insert_init_final_table(main: tmodule; entries: tfplist); override;
      public
       class function finalize_data_node(p: tnode): tnode; override;
       class procedure InsertObjectInfo; override;
@@ -50,13 +51,53 @@ interface
 implementation
 
     uses
-      verbose,cutils,globals,fmodule,systems,finput,versioncmp,
+      verbose,cutils,globals,systems,finput,versioncmp,
       aasmtai,cpubase,llvmbase,aasmllvm,
       aasmcnst,nllvmtcon,
       symbase,symtable,defutil,
       llvminfo,llvmtype,llvmdef,
       nbas,ncal,nmem,nadd,ncon,nflw,nutils,
       objcasm;
+
+  class procedure tllvmnodeutils.insert_init_final_table(main: tmodule; entries: tfplist);
+    var
+      i,j,k: longint;
+      entry: pinitfinalentry;
+      sym: tsym;
+      pd: tprocdef;
+      asmsym: tasmsymbol;
+      name: TSymStr;
+    begin
+      { The table stores untyped code pointers. Declare the referenced aliases
+        with their actual signatures before LLVM infers a data declaration
+        from those pointers. }
+      for i:=0 to entries.count-1 do
+        begin
+          entry:=pinitfinalentry(entries[i]);
+          for j:=0 to entry^.module.localsymtable.symlist.count-1 do
+            begin
+              sym:=tsym(entry^.module.localsymtable.symlist[j]);
+              if sym.typ<>procsym then
+                continue;
+              for k:=0 to tprocsym(sym).procdeflist.count-1 do
+                begin
+                  pd:=tprocdef(tprocsym(sym).procdeflist[k]);
+                  name:='';
+                  if (entry^.initfunc<>'') and pd.has_alias_name(entry^.initfunc) then
+                    name:=entry^.initfunc
+                  else if (entry^.finifunc<>'') and pd.has_alias_name(entry^.finifunc) then
+                    name:=entry^.finifunc;
+                  if name='' then
+                    continue;
+                  asmsym:=current_asmdata.RefAsmSymbol(name,AT_FUNCTION);
+                  if not asmsym.declared then
+                    current_asmdata.asmlists[al_globals].concat(
+                      taillvmdecl.createdecl(asmsym,nil,pd,nil,sec_code,0));
+                end;
+            end;
+        end;
+      inherited insert_init_final_table(main,entries);
+    end;
 
   class function tllvmnodeutils.finalize_data_node(p: tnode): tnode;
     var

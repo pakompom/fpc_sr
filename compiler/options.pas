@@ -2244,6 +2244,15 @@ end;
 procedure TOption.CheckOptionsCompatibility;
 begin
 {$ifdef wasm}
+{$ifdef llvm}
+  if target_info.system=system_wasm32_wasip2 then
+    Message1(option_unsupported_target_for_feature,'LLVM with WASI Preview 2');
+  if init_settings.llvmversion<llvmver_17_0 then
+    Message1(option_unsupported_target_for_feature,'WebAssembly LLVM IR before version 17');
+  if (ts_wasm_bf_exceptions in init_settings.targetswitches) or
+     (ts_wasm_no_exceptions in init_settings.targetswitches) then
+    Message1(option_unsupported_target_for_feature,'LLVM WebAssembly without native exceptions');
+{$endif llvm}
   if (Ord(ts_wasm_no_exceptions in init_settings.targetswitches)+
       Ord(ts_wasm_native_exnref_exceptions in init_settings.targetswitches)+
       Ord(ts_wasm_native_legacy_exceptions in init_settings.targetswitches)+
@@ -5779,11 +5788,17 @@ begin
   end;
 {$endif m68k}
 {$ifdef wasm}
-  { if no explicit exception handling mode is set for WebAssembly, select branchful exceptions }
+  { LLVM uses native WebAssembly exceptions; the native code generator also
+    supports its branchful exception ABI. }
   if init_settings.targetswitches*[ts_wasm_no_exceptions,ts_wasm_native_exnref_exceptions,ts_wasm_native_legacy_exceptions,ts_wasm_bf_exceptions]=[] then
     begin
+{$ifdef llvm}
+      def_system_macro(TargetSwitchStr[ts_wasm_native_exnref_exceptions].define);
+      include(init_settings.targetswitches,ts_wasm_native_exnref_exceptions);
+{$else llvm}
       def_system_macro(TargetSwitchStr[ts_wasm_bf_exceptions].define);
       include(init_settings.targetswitches,ts_wasm_bf_exceptions);
+{$endif llvm}
     end;
 {$endif wasm}
 

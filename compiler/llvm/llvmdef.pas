@@ -122,6 +122,9 @@ implementation
     verbose,systems,
     fmodule,
     symtable,symsym,
+{$ifdef wasm32}
+    symcpu,
+{$endif}
     llvmsym,hlcgobj,
     defutil,blockutl,cgbase,paramgr,
     llvminfo,cpubase;
@@ -273,6 +276,16 @@ implementation
       namestart: longint;
       logicalname: TSymStr;
     begin
+{$ifdef wasm32}
+      { LLVM selects the scoped Wasm EH model by the IR personality name.
+        The no-mangle prefix would hide it from classifyEHPersonality. Wasm
+        has no C symbol prefix, so the object spelling remains identical. }
+      if s='__gxx_wasm_personality_v0' then
+        begin
+          result:='@__gxx_wasm_personality_v0';
+          exit;
+        end;
+{$endif wasm32}
       { Darwin's ordinary C prefix is added by LLVM. Expose the logical name
         so LLVM can recognize library functions, while preserving the exact
         object spelling. Keep literal names and the reserved LLVM namespace
@@ -388,6 +401,10 @@ implementation
       var
         def_is_address: boolean;
       begin
+{$ifdef wasm32}
+        if is_wasm_reference_type(def) then
+          Message1(option_unsupported_target_for_feature,'WebAssembly reference types in the LLVM backend');
+{$endif}
         def_is_address:=false;
         if ((lef_removeouterpointer in flags) or
             (llvmflag_opaque_ptr in llvmversion_properties[current_settings.llvmversion])) and
@@ -1008,7 +1025,7 @@ implementation
         encodedstr:=encodedstr+' ';
         { add procname? }
         if (pddecltype in [lpd_decl,lpd_def]) and
-           (def.typ=procdef) then
+           ((def.typ=procdef) or (customname<>'')) then
           if customname='' then
             encodedstr:=encodedstr+llvmmangledname(tprocdef(def).mangledname)
           else

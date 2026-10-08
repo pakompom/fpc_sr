@@ -30,6 +30,7 @@ the behaviour of such a unit having just a USES clause! }
 implementation
 
   uses
+{$ifndef llvm}
     ncgbas,ncgflw,ncgcnv,ncgld,ncgmem,ncgcon,ncgset,
     ncgadd, ncgcal,ncgmat,ncginl,
 
@@ -37,6 +38,9 @@ implementation
     nwasmmem,
     { these are not really nodes }
     nwasmutil,
+{$else}
+    llvmnode,nllvmwasminl,
+{$endif}
     { symtable }
     symcpu,
     aasmdef;

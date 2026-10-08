@@ -54,7 +54,7 @@ implementation
 
     uses
       systems,globals,verbose,
-      symconst,symtable,symsym,llvmdef,defutil,
+      symconst,symtable,symsym,llvmdef,defutil,ncon,
       pass_2,cgutils,hlcgobj,parabase,paramgr,tgobj,
       llvmbase,aasmtai,aasmllvm,
       procinfo,llvmpi;
@@ -102,7 +102,19 @@ implementation
     function tllvmraisenode.pass_1: tnode;
       begin
         if assigned(left) then
-          result:=inherited
+          begin
+{$ifdef wasm32}
+            { Wasm has neither addressable instruction labels nor a native
+              frame chain. Match the native Wasm raisenode, while preserving
+              an explicitly supplied "raise ... at" address. }
+            if not assigned(right) then
+              begin
+                right:=cpointerconstnode.create(0,voidcodepointertype);
+                third:=cpointerconstnode.create(0,voidpointertype);
+              end;
+{$endif wasm32}
+            result:=inherited;
+          end
         else
           begin
             expectloc:=LOC_VOID;

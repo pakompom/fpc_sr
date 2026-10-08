@@ -109,6 +109,13 @@ implementation
           formaldef :
             result:=true;
           recorddef :
+{$ifdef llvm}
+            { C aggregate values use LLVM's byval storage contract. A const
+              Pascal record remains an explicitly indirect parameter. }
+            if (varspez=vs_value) and (calloption in cdecl_pocalls) then
+              result:=false
+            else
+{$endif}
             result:=(varspez=vs_const) or not is_singleton_scalar_record(trecorddef(def));
           arraydef :
             begin
@@ -149,6 +156,40 @@ implementation
         { all aggregate types are emulated using indirect pointer types }
         result:=inherited;
       end;
+
+{$ifdef llvm}
+    { Native Wasm models values using stack slots. LLVM needs the scalar type
+      used by the ABI, including when it is nested in a singleton aggregate. }
+    function llvm_wasm_scalar_type(def: tdef): tdef;
+      var
+        i: longint;
+      begin
+        result:=def;
+        case def.typ of
+          recorddef:
+            for i:=0 to trecorddef(def).symtable.symlist.count-1 do
+              if (tsym(trecorddef(def).symtable.symlist[i]).typ=fieldvarsym) and
+                 not(sp_static in tsym(trecorddef(def).symtable.symlist[i]).symoptions) then
+                exit(llvm_wasm_scalar_type(tfieldvarsym(trecorddef(def).symtable.symlist[i]).vardef));
+          arraydef:
+            result:=llvm_wasm_scalar_type(tarraydef(def).elementdef);
+          else
+            ;
+        end;
+      end;
+
+    function llvm_wasm_ordinal_type(def: tdef): tdef;
+      begin
+        result:=def;
+        { Preserve the declared type in cgpara.def; the larger location type
+          tells LLVM to attach signext/zeroext to narrow scalar parameters. }
+        if is_ordinal(def) and (def.size<4) then
+          if is_signed(def) then
+            result:=s32inttype
+          else
+            result:=u32inttype;
+      end;
+{$endif}
 
 
     function tcpuparamanager.get_funcretloc(p : tabstractprocdef; side: tcallercallee; forcetempdef: tdef): tcgpara;
@@ -203,6 +244,23 @@ implementation
         paraloc^.reference.offset:=0;
         paraloc^.size:=result.size;
         paraloc^.def:=result.def;
+{$ifdef llvm}
+        { LLVM scalar results are SSA values, not linear-memory references. }
+        if (result.def.typ=recorddef) and is_singleton_scalar_record(trecorddef(result.def)) then
+          paraloc^.def:=llvm_wasm_scalar_type(result.def)
+        else
+          paraloc^.def:=llvm_wasm_ordinal_type(result.def);
+        paraloc^.size:=def_cgsize(paraloc^.def);
+        if paraloc^.def.typ=floatdef then
+          paraloc^.loc:=LOC_FPUREGISTER
+        else
+          paraloc^.loc:=LOC_REGISTER;
+        if paraloc^.loc=LOC_FPUREGISTER then
+          paraloc^.register:=newreg(R_FPUREGISTER,RS_R0,R_SUBWHOLE)
+        else
+          paraloc^.register:=NR_R0;
+        paraloc^.shiftval:=0;
+{$endif}
       end;
 
     function tcpuparamanager.param_use_paraloc(const cgpara: tcgpara): boolean;
@@ -318,6 +376,37 @@ implementation
               else
                 ;
             end;
+{$ifdef llvm}
+            { Wasm arguments are values on the evaluation stack. Represent
+              those as virtual registers for LLVM, including pointer args. }
+            if (paradef.typ=recorddef) and
+               not is_singleton_scalar_record(trecorddef(paradef)) then
+              begin
+                { A non-singleton C value aggregate stays a reference here;
+                  llvmpara turns it into a pointer with a byval attribute. }
+                paraloc^.loc:=LOC_REFERENCE;
+                hp.paraloc[side].alignment:=paradef.alignment;
+              end
+            else
+              begin
+                if paradef.typ=recorddef then
+                  paraloc^.def:=llvm_wasm_scalar_type(paradef)
+                else
+                  paraloc^.def:=llvm_wasm_ordinal_type(paradef);
+                paraloc^.size:=def_cgsize(paraloc^.def);
+                if paraloc^.def.typ=floatdef then
+                  begin
+                    paraloc^.loc:=LOC_FPUREGISTER;
+                    paraloc^.register:=newreg(R_FPUREGISTER,RS_R0,R_SUBWHOLE);
+                  end
+                else
+                  begin
+                    paraloc^.loc:=LOC_REGISTER;
+                    paraloc^.register:=NR_R0;
+                  end;
+                paraloc^.shiftval:=0;
+              end;
+{$endif}
             inc(paraofs);
           end;
         parasize:=paraofs;
@@ -357,6 +446,19 @@ implementation
     function tcpuparamanager.is_singleton_scalar_array(def:tarraydef):boolean;
       begin
         result:=(def.size in [1,2,4,8]) and (def.elecount=1);
+{$ifdef llvm}
+        { A one-element array can itself contain a non-scalar aggregate.
+          Only flatten it when its complete element is a single scalar. }
+        if result then
+          case def.elementdef.typ of
+            recorddef:
+              result:=is_singleton_scalar_record(trecorddef(def.elementdef));
+            arraydef:
+              result:=is_singleton_scalar_array(tarraydef(def.elementdef));
+            else
+              ;
+          end;
+{$endif}
       end;
 
 

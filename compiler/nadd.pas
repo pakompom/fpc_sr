@@ -1734,7 +1734,9 @@ const
                         exit;
                       end
                     else if (trealconstnode(left).value_real=2) and (nodetype=muln) and not(might_have_sideeffects(right,[mhs_exceptions])) and
-                      (node_complexity(right)<=1) then
+                      { Ordered operands may contain a single-use temporary,
+                        including underneath a Single-to-Double conversion. }
+                      not(anf_delphi_ordered in addnodeflags) and (node_complexity(right)<=1) then
                       begin
                         result:=caddnode.create_internal(addn,right.getcopy,right.getcopy);
                         exit;
@@ -1767,7 +1769,7 @@ const
                         exit;
                       end
                     else if (trealconstnode(right).value_real=2) and (nodetype=muln) and not(might_have_sideeffects(left,[mhs_exceptions])) and
-                      (node_complexity(left)<=1) then
+                      not(anf_delphi_ordered in addnodeflags) and (node_complexity(left)<=1) then
                       begin
                         result:=caddnode.create_internal(addn,left.getcopy,left.getcopy);
                         exit;

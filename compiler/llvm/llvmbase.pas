@@ -38,6 +38,7 @@ interface
 
   type
     tllvmatomicordering = (lao_monotonic,lao_seq_cst);
+    tllvmatomicop = (lao_add,lao_sub,lao_and,lao_or,lao_xor,lao_xchg);
 
     tllvmop = (la_none,
       { terminator instructions }
@@ -56,7 +57,7 @@ interface
       { memory access and memory addressing operations }
       la_alloca,
       la_load, la_store,
-      la_fence, la_cmpxchg, la_atomicrmw,
+      la_fence, la_cmpxchg, la_atomicrmw, la_atomicload, la_atomicstore,
       la_getelementptr,
       { conversion operations }
       la_trunc, la_zext, la_sext, la_fptrunc, la_fpext,

@@ -47,6 +47,9 @@ implementation
   function get_para_push_size(def: tdef): tdef;
     begin
       result:=def;
+{$ifndef llvm}
+      { Native Wasm stack slots do not encode signedness. LLVM parameter
+        attributes do, so retain the declared type when targeting LLVM. }
       if def.typ=orddef then
         case torddef(def).ordtype of
           u8bit,uchar:
@@ -60,6 +63,7 @@ implementation
           else
             ;
         end;
+{$endif llvm}
     end;
 
   function wasmAlwayInMem(def: tdef): boolean;

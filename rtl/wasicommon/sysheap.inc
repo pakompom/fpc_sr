@@ -41,6 +41,22 @@ begin
   InitialHeapBlockEnd:=Pointer(PtrUInt(fpc_wasm32_memory_size)*WasmMemoryPageSize);
 end;
 
+{$ifdef FPC_WASM_HOST_ALLOCATOR}
+{ A module sharing linear memory with C must obtain arena blocks from the
+  same allocator. Independently growing a second heap can overwrite C data. }
+function HostMalloc(size: ptruint): pointer; cdecl; external name 'malloc';
+procedure HostFree(p: pointer); cdecl; external name 'free';
+
+function SysOSAlloc(size: ptruint): pointer;
+begin
+  Result:=HostMalloc(size);
+end;
+
+procedure SysOSFree(p: pointer; size: ptruint);
+begin
+  HostFree(p);
+end;
+{$else FPC_WASM_HOST_ALLOCATOR}
 function SysOSAlloc(size: ptruint): pointer;
 const
   err = high(longword);
@@ -83,3 +99,4 @@ end;
 procedure SysOSFree(p: pointer; size: ptruint);
 begin
 end;
+{$endif FPC_WASM_HOST_ALLOCATOR}

@@ -35,6 +35,9 @@ unit i_wasi;
             name         : 'The WebAssembly System Interface Preview 1 (WASI 0.1)';
             shortname    : 'Wasip1';
             flags        : [tf_needs_symbol_size,tf_needs_symbol_type,
+{$ifdef llvm}
+                            tf_use_psabieh,
+{$endif}
                             tf_files_case_sensitive,tf_no_pic_supported,
                             tf_smartlink_sections,tf_has_winlike_resources,
                             { avoid the creation of threadvar tables }
@@ -68,7 +71,11 @@ unit i_wasi;
             dirsep       : '/';
             assem        : as_wasm32_wasm;
             assemextern  : as_wasm32_llvm_mc;
+{$ifdef llvm}
+            link         : ld_none;
+{$else}
             link         : ld_int_wasi;
+{$endif}
             linkextern   : ld_wasi;
             ar           : ar_none;
             res          : res_wasm;
@@ -97,7 +104,7 @@ unit i_wasi;
             stacksize   : 8*1024*1024;
             stackalign   : 16;
             abi          : abi_default;
-            llvmdatalayout : 'todo';
+            llvmdatalayout : 'e-m:e-p:32:32-p10:8:8-p20:8:8-i64:64-i128:128-n32:64-S128-ni:1:10:20';
           );
 
 
@@ -107,6 +114,9 @@ unit i_wasi;
             name         : 'The WebAssembly System Interface Preview 1 with Multithreading (WASI 0.1 + wasi-threads)';
             shortname    : 'Wasip1threads';
             flags        : [tf_needs_symbol_size,tf_needs_symbol_type,
+{$ifdef llvm}
+                            tf_use_psabieh,
+{$endif}
                             tf_files_case_sensitive,tf_no_pic_supported,
                             tf_smartlink_sections,tf_has_winlike_resources,
                             { avoid the creation of threadvar tables }
@@ -141,7 +151,11 @@ unit i_wasi;
             dirsep       : '/';
             assem        : as_wasm32_wasm;
             assemextern  : as_wasm32_llvm_mc;
+{$ifdef llvm}
+            link         : ld_none;
+{$else}
             link         : ld_int_wasi;
+{$endif}
             linkextern   : ld_wasi;
             ar           : ar_none;
             res          : res_wasm;
@@ -170,7 +184,7 @@ unit i_wasi;
             stacksize   : 8*1024*1024;
             stackalign   : 16;
             abi          : abi_default;
-            llvmdatalayout : 'todo';
+            llvmdatalayout : 'e-m:e-p:32:32-p10:8:8-p20:8:8-i64:64-i128:128-n32:64-S128-ni:1:10:20';
           );
 
 

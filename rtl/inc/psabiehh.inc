@@ -73,11 +73,18 @@ const
     (a: 'FPC1PAS'#0);
 {$pop}
 
+{$ifdef CPUWASM32}
+{ LLVM recognizes the scoped Wasm EH personality by name. Generated Pascal
+  catchpads contain only a catch-all clause, so this function is never called. }
+function FPC_psabi_wasm_personality(exc: pointer): longint; cdecl; external name '__gxx_wasm_personality_v0';
+function FPC_psabi_wasm_matches(exc: PFPC_Unwind_Exception; catchtype: pointer): longint; compilerproc;
+{$else CPUWASM32}
 {$ifdef __ARM_EABI_UNWINDER__}
 function _FPC_psabieh_personality_v0(state: FPC_Unwind_State; libunwind_exception: PFPC_Unwind_Exception; context: PFPC_Unwind_Context): FPC_Unwind_Reason_Code; cdecl; public;
 {$else}
 function _FPC_psabieh_personality_v0(version: longint; actions: FPC_Unwind_Action; exceptionClass: qword; libunwind_exception: PFPC_Unwind_Exception; context: PFPC_Unwind_Context): FPC_Unwind_Reason_Code; cdecl; public;
 {$endif}
+{$endif CPUWASM32}
 function FPC_psabi_begin_catch(exc:PFPC_Unwind_Exception): pointer; compilerproc;
 procedure FPC_psabi_end_catch; cdecl; compilerproc;
 

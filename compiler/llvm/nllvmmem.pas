@@ -283,7 +283,10 @@ implementation
         the chunk index part }
       hreg2:=hlcg.getintregister(current_asmdata.CurrAsmList,ptruinttype);
       hlcg.a_op_const_reg_reg(current_asmdata.CurrAsmList,OP_AND,ptruinttype,(1 shl (3+alignpower))-1,hreg,hreg2);
-      sref.bitindexreg:=hreg2;
+      { Subset loads and stores operate on aluuinttype values. LLVM requires
+        a shift count to have that same type, even on a 32-bit pointer target. }
+      sref.bitindexreg:=hlcg.getintregister(current_asmdata.CurrAsmList,aluuinttype);
+      hlcg.a_load_reg_reg(current_asmdata.CurrAsmList,ptruinttype,aluuinttype,hreg2,sref.bitindexreg);
       sref.startbit:=0;
       sref.bitlen:=resultdef.packedbitsize;
       if (left.location.loc=LOC_REFERENCE) then

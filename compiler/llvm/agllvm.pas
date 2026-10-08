@@ -123,6 +123,9 @@ implementation
       fmodule,verbose,
       objcasm,
       aasmcnst,symconst,symdef,symtable,
+{$ifdef wasm32}
+      aasmcpu,
+{$endif}
       llvmbase,itllvm,llvmdef,
       cgbase,cgutils,cpubase,cpuinfo,triplet,llvminfo;
 
@@ -605,6 +608,26 @@ implementation
             owner.writer.AsmWrite(getopstr(taillvm(hp).oper[1]^,false));
             done:=true;
           end;
+{$ifdef wasm32}
+        la_landingpad:
+          begin
+            { WebAssembly uses scoped EH IR. Leave the catch funclet before
+              entering the Pascal handler: its ordinary control flow includes
+              shared finally blocks, exits, and nested exception regions.
+              Pascal class matching is performed by the RTL, so a single
+              catch-all clause avoids the C++ LSDA/personality ABI. }
+            tmpstr:=getopstr(taillvm(hp).oper[0]^,false);
+            delete(tmpstr,1,1);
+            owner.writer.AsmWriteln('%wasm.cs.'+tmpstr+' = catchswitch within none [label %wasm.catch.'+tmpstr+'] unwind to caller');
+            owner.writer.AsmWriteln('wasm.catch.'+tmpstr+':');
+            owner.writer.AsmWriteln(#9+'%wasm.pad.'+tmpstr+' = catchpad within %wasm.cs.'+tmpstr+' [ptr null]');
+            owner.writer.AsmWriteln(#9+'%wasm.exn.'+tmpstr+' = call ptr @llvm.wasm.get.exception(token %wasm.pad.'+tmpstr+')');
+            owner.writer.AsmWriteln(#9+'catchret from %wasm.pad.'+tmpstr+' to label %wasm.caught.'+tmpstr);
+            owner.writer.AsmWriteln('wasm.caught.'+tmpstr+':');
+            owner.writer.AsmWrite(#9+'%'+tmpstr+' = insertvalue '+llvmencodetypename(taillvm(hp).oper[1]^.def)+' zeroinitializer, ptr %wasm.exn.'+tmpstr+', 0');
+            done:=true;
+          end;
+{$endif wasm32}
         la_asmblock:
           begin
             owner.writer.AsmWrite('call void asm sideeffect "');
@@ -647,10 +670,14 @@ implementation
         la_atomicrmw:
           begin
             owner.writer.AsmWrite(getopstr(taillvm(hp).oper[0]^,false)+' = atomicrmw ');
-            if taillvm(hp).oper[4]^.val<>0 then
-              owner.writer.AsmWrite('sub ')
-            else
-              owner.writer.AsmWrite('add ');
+            case tllvmatomicop(taillvm(hp).oper[4]^.val) of
+              lao_add: owner.writer.AsmWrite('add ');
+              lao_sub: owner.writer.AsmWrite('sub ');
+              lao_and: owner.writer.AsmWrite('and ');
+              lao_or: owner.writer.AsmWrite('or ');
+              lao_xor: owner.writer.AsmWrite('xor ');
+              lao_xchg: owner.writer.AsmWrite('xchg ');
+            end;
             owner.writer.AsmWrite(llvmencodetypename(cpointerdef.getreusable(taillvm(hp).oper[1]^.def))+' ');
             owner.writer.AsmWrite(getregisterstring(taillvm(hp).oper[2]^.reg)+', ');
             owner.writer.AsmWrite(llvmencodetypename(taillvm(hp).oper[1]^.def)+' ');
@@ -662,12 +689,43 @@ implementation
             end;
             done:=true;
           end;
+        la_cmpxchg:
+          begin
+            { Pascal's compare/exchange returns the old scalar value. Keep
+              LLVM's auxiliary success result private to this instruction. }
+            tmpstr:=getregisterstring(taillvm(hp).oper[0]^.reg)+'.cmpxchg';
+            owner.writer.AsmWrite(tmpstr+' = cmpxchg ');
+            owner.writer.AsmWrite(llvmencodetypename(cpointerdef.getreusable(taillvm(hp).oper[1]^.def))+' ');
+            owner.writer.AsmWrite(getregisterstring(taillvm(hp).oper[2]^.reg)+', ');
+            owner.writer.AsmWrite(llvmencodetypename(taillvm(hp).oper[1]^.def)+' '+getregisterstring(taillvm(hp).oper[3]^.reg)+', ');
+            owner.writer.AsmWrite(llvmencodetypename(taillvm(hp).oper[1]^.def)+' '+getregisterstring(taillvm(hp).oper[4]^.reg));
+            owner.writer.AsmWriteln(' seq_cst seq_cst');
+            owner.writer.AsmWrite(getregisterstring(taillvm(hp).oper[0]^.reg)+' = extractvalue { '+llvmencodetypename(taillvm(hp).oper[1]^.def)+', i1 } '+tmpstr+', 0');
+            done:=true;
+          end;
+        la_atomicload:
+          begin
+            owner.writer.AsmWrite(getregisterstring(taillvm(hp).oper[0]^.reg)+' = load atomic '+llvmencodetypename(taillvm(hp).oper[1]^.def)+', ');
+            owner.writer.AsmWrite(llvmencodetypename(cpointerdef.getreusable(taillvm(hp).oper[1]^.def))+' '+getregisterstring(taillvm(hp).oper[2]^.reg));
+            owner.writer.AsmWrite(' seq_cst, align '+tostr(taillvm(hp).oper[1]^.def.size));
+            done:=true;
+          end;
+        la_atomicstore:
+          begin
+            owner.writer.AsmWrite('store atomic '+llvmencodetypename(taillvm(hp).oper[0]^.def)+' '+getregisterstring(taillvm(hp).oper[1]^.reg)+', ');
+            owner.writer.AsmWrite(llvmencodetypename(cpointerdef.getreusable(taillvm(hp).oper[0]^.def))+' '+getregisterstring(taillvm(hp).oper[2]^.reg));
+            owner.writer.AsmWrite(' seq_cst, align '+tostr(taillvm(hp).oper[0]^.def.size));
+            done:=true;
+          end;
+        la_fence:
+          begin
+            owner.writer.AsmWrite('fence seq_cst');
+            done:=true;
+          end;
         la_ret, la_br, la_switch, la_indirectbr,
         la_resume,
         la_unreachable,
         la_store,
-        la_fence,
-        la_cmpxchg,
         la_catch,
         la_filter,
         la_cleanup:
@@ -896,6 +954,9 @@ implementation
         writer.AsmWrite('target triple = "');
         writer.AsmWrite(targettriplet(triplet_llvm));
         writer.AsmWriteln('"');
+{$ifdef wasm32}
+        writer.AsmWriteln('declare ptr @llvm.wasm.get.exception(token) nounwind');
+{$endif wasm32}
       end;
 
 
@@ -1062,6 +1123,25 @@ implementation
             ('', '+v8a', '+v8a', '+v8.1a', '+v8.2a', '+v8.3a', '+v8.4a',
              '+v8.5a', '+v8.6a', '+v8.7a', '+v8.8a', '+v8.9a');
 {$endif aarch64}
+{$ifdef wasm32}
+        var
+          exported: tai;
+          wasmexport: ansistring;
+
+        procedure WriteWasmAttribute(const name,value: ansistring);
+          var
+            i: longint;
+          begin
+            writer.AsmWrite(' "'+name+'"="');
+            for i:=1 to length(value) do
+              if (ord(value[i])<32) or (ord(value[i])>126) or
+                 (value[i] in ['"','\']) then
+                writer.AsmWrite('\'+hexstr(ord(value[i]),2))
+              else
+                writer.AsmWrite(value[i]);
+            writer.AsmWrite('"');
+          end;
+{$endif wasm32}
         begin
 {$ifdef aarch64}
           { clang's -march option controls code generation, but does not
@@ -1071,6 +1151,40 @@ implementation
           if is_definition and (archfeatures[current_settings.cputype]<>'') then
             writer.AsmWrite(' "target-features"="'+archfeatures[current_settings.cputype]+'"');
 {$endif aarch64}
+{$ifdef wasm32}
+          if is_definition then
+            begin
+              if ts_wasm_threads in current_settings.targetswitches then
+                WriteWasmAttribute('target-features','+bulk-memory,+mutable-globals,+exception-handling,+atomics')
+              else
+                WriteWasmAttribute('target-features','+bulk-memory,+mutable-globals,+exception-handling');
+            end;
+          if not is_definition and (po_external in pd.procoptions) and
+             assigned(pd.import_dll) then
+            begin
+              WriteWasmAttribute('wasm-import-module',pd.import_dll^);
+              if assigned(pd.import_name) then
+                WriteWasmAttribute('wasm-import-name',pd.import_name^);
+            end;
+          if is_definition and assigned(current_asmdata.asmlists[al_exports]) then
+            begin
+              wasmexport:='';
+              exported:=tai(current_asmdata.asmlists[al_exports].first);
+              while assigned(exported) do
+                begin
+                  if (exported.typ=ait_export_name) and
+                     (tai_export_name(exported).intname=pd.mangledname) then
+                    begin
+                      if (wasmexport<>'') and (wasmexport<>tai_export_name(exported).extname) then
+                        Message1(option_unsupported_target_for_feature,'multiple WebAssembly export names for one LLVM function');
+                      wasmexport:=tai_export_name(exported).extname;
+                    end;
+                  exported:=tai(exported.next);
+                end;
+              if wasmexport<>'' then
+                WriteWasmAttribute('wasm-export-name',wasmexport);
+            end;
+{$endif wasm32}
           { function attributes }
           if (pos('FPC_SETJMP',upper(pd.mangledname))<>0) or
              (pd.mangledname=(target_info.cprefix+'setjmp')) then
@@ -1095,8 +1209,14 @@ implementation
             writer.AsmWrite(' null_pointer_is_valid')
           else
             writer.AsmWrite(' "null-pointer-is-valid"="true"');
+          { WebAssembly has no observable FP environment. Marking its
+            functions strictfp makes LLVM synthesize unsupported constrained
+            comparisons when inlining. Ordinary FP still forbids fast-math
+            reassociation and contraction unless explicitly requested. }
+{$ifndef wasm32}
           if not(pio_fastmath in pd.implprocoptions) then
             writer.AsmWrite(' strictfp');
+{$endif}
           if cs_sanitize_address in current_settings.moduleswitches then
             writer.AsmWrite(' sanitize_address');
           if po_assembler in pd.procoptions then
@@ -1411,13 +1531,16 @@ implementation
             end;
           ait_llvmdecl:
             begin
-              if taillvmdecl(hp).def.typ=procdef then
+              if (taillvmdecl(hp).def.typ=procdef) or
+                 ((taillvmdecl(hp).namesym.typ=AT_FUNCTION) and
+                  (taillvmdecl(hp).def.typ=procvardef)) then
                 begin
                   if not(ldf_definition in taillvmdecl(hp).flags) then
                     begin
                       writer.AsmWrite('declare');
-                      writer.AsmWrite(llvmencodeproctype(tprocdef(taillvmdecl(hp).def), taillvmdecl(hp).namesym.name, lpd_decl));
-                      WriteFunctionFlags(tprocdef(taillvmdecl(hp).def),false);
+                      writer.AsmWrite(llvmencodeproctype(tabstractprocdef(taillvmdecl(hp).def), taillvmdecl(hp).namesym.name, lpd_decl));
+                      if taillvmdecl(hp).def.typ=procdef then
+                        WriteFunctionFlags(tprocdef(taillvmdecl(hp).def),false);
                       writer.AsmLn;
                     end
                   else
@@ -1527,6 +1650,12 @@ implementation
                   writer.AsmLn;
                 end;
             end;
+{$ifdef wasm32}
+          { Function exports are attached to their LLVM definitions above. }
+          ait_export_name:
+            if tai_export_name(hp).symstype<>ie_Func then
+              Message1(option_unsupported_target_for_feature,'LLVM WebAssembly exports other than functions');
+{$endif wasm32}
           ait_llvmalias:
             begin
               writer.AsmWrite(LlvmAsmSymName(taillvmalias(hp).newsym));
@@ -1764,6 +1893,17 @@ implementation
         else
           optstr:='-O0';
         optstr:=optstr+wpostr;
+{$ifdef wasm32}
+        { Native Wasm EH uses LLVM's funclet lowering. Keep the encoding
+          selection consistent with FPC's public target switch. }
+        optstr:=optstr+' -mexception-handling -mbulk-memory -mllvm -wasm-enable-eh';
+        if ts_wasm_native_exnref_exceptions in current_settings.targetswitches then
+          optstr:=optstr+' -mllvm -wasm-use-legacy-eh=false'
+        else
+          optstr:=optstr+' -mllvm -wasm-use-legacy-eh=true';
+        if ts_wasm_threads in current_settings.targetswitches then
+          optstr:=optstr+' -matomics';
+{$endif wasm32}
         { stack frame elimination }
         if not(cs_opt_stackframe in current_settings.optimizerswitches) then
           optstr:=optstr+' -fno-omit-frame-pointer'
@@ -1835,7 +1975,7 @@ implementation
           idtxt  : 'CLANG-LLVM';
           asmbin : 'clang';
           asmcmd: '-x ir $OPT -target $TRIPLET -c -o $OBJ $ASM $EXTRAOPT';
-          supported_targets : [system_x86_64_win64,system_x86_64_linux,system_aarch64_linux,system_arm_linux,system_x86_64_openbsd,system_x86_64_freebsd,system_aarch64_android];
+          supported_targets : [system_wasm32_wasip1,system_wasm32_wasip1threads,system_x86_64_win64,system_x86_64_linux,system_aarch64_linux,system_arm_linux,system_x86_64_openbsd,system_x86_64_freebsd,system_aarch64_android];
           flags : [af_smartlink_sections,af_llvm];
           labelprefix : '.L';
           labelmaxlen : -1;

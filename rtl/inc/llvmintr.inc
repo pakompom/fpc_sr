@@ -18,6 +18,22 @@ procedure llvm_memcpy64(dest, source: pointer; len: qword; align: cardinal; isvo
 { LLVM 7.0+, alignment specified as part of the dest and source parameters }
 procedure llvm_memcpy64_indivalign(dest, source: pointer; len: qword; isvolatile: LLVMBool1); compilerproc; external name 'llvm.memcpy.p0i8.p0i8.i64';
 
+{$ifdef CPUWASM32}
+function llvm_wasm_memory_size(index: longint): longword; compilerproc; external name 'llvm.wasm.memory.size.i32';
+function llvm_wasm_memory_grow(index: longint; delta: longword): longword; compilerproc; external name 'llvm.wasm.memory.grow.i32';
+procedure llvm_wasm_memory_fill(dest: pointer; value: byte; count: longword; isvolatile: LLVMBool1); compilerproc; external name 'llvm.memset.p0i8.i32';
+{ Pascal Move, like memory.copy, permits overlapping source and destination. }
+procedure llvm_wasm_memory_copy(dest, source: pointer; count: longword; isvolatile: LLVMBool1); compilerproc; external name 'llvm.memmove.p0i8.p0i8.i32';
+procedure llvm_trap; compilerproc; external name 'llvm.trap';
+function llvm_nearbyint_f64(val: double): double; compilerproc; external name 'llvm.nearbyint.f64';
+function llvm_wasm_memory_atomic_wait32(address: pointer; expected: longword; timeout: int64): longint; compilerproc; external name 'llvm.wasm.memory.atomic.wait32';
+function llvm_wasm_memory_atomic_wait64(address: pointer; expected: qword; timeout: int64): longint; compilerproc; external name 'llvm.wasm.memory.atomic.wait64';
+function llvm_wasm_memory_atomic_notify(address: pointer; count: longword): longword; compilerproc; external name 'llvm.wasm.memory.atomic.notify';
+function llvm_wasm_tls_size: longword; compilerproc; external name 'llvm.wasm.tls.size.i32';
+function llvm_wasm_tls_align: longword; compilerproc; external name 'llvm.wasm.tls.align.i32';
+function llvm_wasm_tls_base: pointer; compilerproc; external name 'llvm.wasm.tls.base';
+{$endif CPUWASM32}
+
 function llvm_frameaddress(level: longint): pointer; compilerproc; external name 'llvm.frameaddress';
 
 function llvm_eh_typeid_for(sym: pointer): longint; compilerproc; external name 'llvm.eh.typeid.for';

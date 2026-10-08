@@ -523,7 +523,12 @@ implementation
           handling is centralised in one place. }
         if not(asmsym.declared) then
           begin
-            if def.typ=procdef then
+            { A function address in a VMT or a typed constant carries a
+              procedure-variable type. Its external declaration must still
+              describe a function, not a data object containing a pointer.
+              Wasm keeps function-table and linear-memory symbols distinct. }
+            if (def.typ=procdef) or
+               ((asmsym.typ=AT_FUNCTION) and (def.typ=procvardef)) then
               sec:=sec_code
             else
               sec:=sec_data;

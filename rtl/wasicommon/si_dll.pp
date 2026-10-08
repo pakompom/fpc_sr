@@ -17,7 +17,7 @@
 
 unit si_dll;
 
-{$if defined(FPC_WASM_BRANCHFUL_EXCEPTIONS) or defined(FPC_WASM_LEGACY_EXCEPTIONS) or defined(FPC_WASM_EXNREF_EXCEPTIONS)}
+{$if defined(FPC_WASM_BRANCHFUL_EXCEPTIONS) or defined(FPC_WASM_LEGACY_EXCEPTIONS) or defined(FPC_WASM_EXNREF_EXCEPTIONS) or defined(FPC_USE_PSABIEH)}
   {$MODESWITCH EXCEPTIONS}
 {$endif}
 
@@ -29,7 +29,7 @@ implementation
 
 procedure PASCALMAIN; external 'PASCALMAIN';
 
-{$if defined(FPC_WASM_BRANCHFUL_EXCEPTIONS) or defined(FPC_WASM_LEGACY_EXCEPTIONS) or defined(FPC_WASM_EXNREF_EXCEPTIONS)}
+{$if defined(FPC_WASM_BRANCHFUL_EXCEPTIONS) or defined(FPC_WASM_LEGACY_EXCEPTIONS) or defined(FPC_WASM_EXNREF_EXCEPTIONS) or defined(FPC_USE_PSABIEH)}
 Procedure DoUnHandledException; external name 'FPC_DOUNHANDLEDEXCEPTION';
 
 procedure _initialize_pascal;
@@ -49,6 +49,16 @@ end;
 
 procedure SetInitialHeapBlockStart(p: Pointer); external name 'FPC_WASM_SETINITIALHEAPBLOCKSTART';
 
+{$ifdef CPULLVM}
+var
+  InitialHeapBase: byte; external name '__heap_base';
+
+procedure _initialize; [public, alias: '_initialize'];
+begin
+  SetInitialHeapBlockStart(@InitialHeapBase);
+  _initialize_pascal;
+end;
+{$else CPULLVM}
 { TODO: remove this, when calling SetInitialHeapBlockStart works directly from within inline asm }
 procedure SetInitialHeapBlockStart2(p: Pointer);
 begin
@@ -62,9 +72,14 @@ asm
 
   call $_initialize_pascal
 end;
+{$endif CPULLVM}
 
 exports
+{$ifndef CPULLVM}
   _initialize,
   _initialize name '_initialize_promising' promising;
+{$else CPULLVM}
+  _initialize name '_initialize';
+{$endif CPULLVM}
 
 end.

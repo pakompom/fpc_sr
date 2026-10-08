@@ -191,6 +191,7 @@ interface
     function llvm_getmetadatareftypedconst(metadata: tai_llvmbasemetadatanode): tai_simpletypedconst;
 
     function llvm_constrainedexceptmodestring: ansistring;
+    function llvm_constrainedroundmodestring: ansistring;
 
 implementation
 
@@ -211,10 +212,22 @@ implementation
 
   function llvm_constrainedexceptmodestring: ansistring;
     begin
+{$ifndef wasm32}
       if not(cs_opt_fastmath in current_settings.optimizerswitches) then
         result:='fpexcept.maytrap'
       else
+{$endif}
         result:='fpexcept.ignore'
+    end;
+
+  function llvm_constrainedroundmodestring: ansistring;
+    begin
+{$ifdef wasm32}
+      { Wasm arithmetic always rounds to nearest, ties to even. }
+      result:='round.tonearest';
+{$else}
+      result:='round.dynamic';
+{$endif}
     end;
 
 

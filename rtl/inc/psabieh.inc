@@ -66,8 +66,21 @@ function FPC_psabieh_GetExceptionWrapper(exceptionObject: PFPC_Unwind_Exception)
     result:=PExceptObject(exceptionObject+1)-1;
   end;
 
-function _Unwind_Resume_or_Rethrow (context:PFPC_Unwind_Context): FPC_Unwind_Reason_Code;cdecl;external;
+function _Unwind_Resume_or_Rethrow (context:PFPC_Unwind_Context): FPC_Unwind_Reason_Code;cdecl;external{$ifdef CPUWASM32} name '_Unwind_RaiseException'{$endif};
 procedure _Unwind_DeleteException(context:PFPC_Unwind_Context);cdecl;external;
+
+{$ifdef CPUWASM32}
+procedure DoUnHandledException; forward;
+
+function FPC_psabi_wasm_matches(exc: PFPC_Unwind_Exception; catchtype: pointer): longint; compilerproc;
+  begin
+    result:=0;
+    if exc^.exception_class<>FPC_psabieh_exceptionClass_ID.u then
+      exit;
+    if FPC_psabieh_GetExceptionWrapper(exc)^.FObject.InheritsFrom(TClass(catchtype)) then
+      result:=1;
+  end;
+{$else CPUWASM32}
 function _Unwind_GetRegionStart(context:PFPC_Unwind_Context):PtrUInt;cdecl;external;
 function _Unwind_GetLanguageSpecificData(context:PFPC_Unwind_Context):PtrUInt;cdecl;external;
 
@@ -950,6 +963,8 @@ function _FPC_psabieh_personality_v0(version: longint; actions: FPC_Unwind_Actio
     result:=FPC_URC_INSTALL_CONTEXT;
   end;
 
+{$endif CPUWASM32}
+
 //////////////////////////////
 ///// Raising an exception
 //////////////////////////////
@@ -1039,6 +1054,12 @@ function FPC_psabi_begin_catch(exc:PFPC_Unwind_Exception): pointer; compilerproc
     // hand off foreign exceptions to the C++ runtime
     if exc^.exception_class<>FPC_psabieh_exceptionClass_ID.u then
       begin
+{$ifdef CPUWASM32}
+        { A Pascal catch-all handles Pascal exceptions. Preserve foreign ABI
+          objects for their owning language instead of treating them as TObject. }
+        _Unwind_RaiseException(exc);
+        DoUnHandledException;
+{$endif CPUWASM32}
         // Can't link foreign exceptions with our stack
         if assigned(_ExceptObjectStack) then
           begin
@@ -1252,9 +1273,15 @@ procedure fpc_raise_nested;compilerproc;
     DoUnHandledException;
   end;
 
+{$ifdef CPUWASM32}
+procedure FPC_DummyPotentialRaise;
+  begin
+  end;
+{$else CPUWASM32}
 procedure FPC_DummyPotentialRaise; nostackframe; assembler;
   asm
   end;
+{$endif CPUWASM32}
 
 {$ifdef WIN64}
 {$linklib unwind}

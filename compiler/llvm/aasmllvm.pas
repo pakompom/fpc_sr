@@ -61,7 +61,9 @@ interface
         constructor op_reg_size_reg(op:tllvmop;dst:tregister;size:tdef;src:tregister);
         { e.g. dst = add size src1, src2 }
         constructor op_reg_size_reg_reg(op:tllvmop;dst:tregister;size:tdef;src1,src2:tregister);
-        constructor atomicrmw_reg_size_reg_reg(dst: tregister; size: tdef; address,value: tregister; subtract: boolean; ordering: tllvmatomicordering);
+        constructor atomicrmw_reg_size_reg_reg(dst: tregister; size: tdef; address,value: tregister; op: tllvmatomicop; ordering: tllvmatomicordering);
+        constructor cmpxchg_reg_size_reg_reg_reg(dst: tregister; size: tdef; address,expected,value: tregister);
+        constructor atomicstore_size_reg_reg(size: tdef; value,address: tregister);
         { e.g. dst = shl size src1, 1 ( = src1 shl 1) }
         constructor op_reg_size_reg_const(op:tllvmop;dst:tregister;size:tdef;src1:tregister;src2:int64);
         { e.g. dst = sub size 0, src2 ( = 0 - src2) }
@@ -280,6 +282,8 @@ implementation
         alignment:=_alignment;
         _namesym.declared:=true;
         flags:=[];
+        if _namesym.typ=AT_TLS then
+          include(flags,ldf_tls);
       end;
 
 
@@ -621,8 +625,8 @@ implementation
           la_unreachable,
           la_ehbarrier,
           la_store,
-          la_fence,
-          la_cmpxchg:
+          la_atomicstore,
+          la_fence:
             begin
               { instructions that never have a result }
               result:=operand_read;
@@ -642,7 +646,7 @@ implementation
           la_icmp, la_fcmp,
           la_phi, la_select,
           la_va_arg, la_landingpad,
-          la_freeze, la_atomicrmw:
+          la_freeze, la_atomicrmw, la_cmpxchg, la_atomicload:
             begin
               if opnr=0 then
                 result:=operand_write
@@ -768,8 +772,25 @@ implementation
               else
                 internalerror(2026100702);
             end;
-          la_fence,
           la_cmpxchg:
+            case opnr of
+              0,3,4: result:=oper[1]^.def;
+              2: result:=cpointerdef.getreusable(oper[1]^.def);
+              else internalerror(2026100802);
+            end;
+          la_atomicload:
+            case opnr of
+              0: result:=oper[1]^.def;
+              2: result:=cpointerdef.getreusable(oper[1]^.def);
+              else internalerror(2026100803);
+            end;
+          la_atomicstore:
+            case opnr of
+              1: result:=oper[0]^.def;
+              2: result:=cpointerdef.getreusable(oper[0]^.def);
+              else internalerror(2026100804);
+            end;
+          la_fence:
             begin
               internalerror(2013110610);
             end;
@@ -889,7 +910,7 @@ implementation
       end;
 
 
-    constructor taillvm.atomicrmw_reg_size_reg_reg(dst: tregister; size: tdef; address,value: tregister; subtract: boolean; ordering: tllvmatomicordering);
+    constructor taillvm.atomicrmw_reg_size_reg_reg(dst: tregister; size: tdef; address,value: tregister; op: tllvmatomicop; ordering: tllvmatomicordering);
       begin
         create_llvm(la_atomicrmw);
         ops:=6;
@@ -897,8 +918,28 @@ implementation
         loaddef(1,size);
         loadreg(2,address);
         loadreg(3,value);
-        loadconst(4,ord(subtract));
+        loadconst(4,ord(op));
         loadconst(5,ord(ordering));
+      end;
+
+    constructor taillvm.cmpxchg_reg_size_reg_reg_reg(dst: tregister; size: tdef; address,expected,value: tregister);
+      begin
+        create_llvm(la_cmpxchg);
+        ops:=5;
+        loadreg(0,dst);
+        loaddef(1,size);
+        loadreg(2,address);
+        loadreg(3,expected);
+        loadreg(4,value);
+      end;
+
+    constructor taillvm.atomicstore_size_reg_reg(size: tdef; value,address: tregister);
+      begin
+        create_llvm(la_atomicstore);
+        ops:=3;
+        loaddef(0,size);
+        loadreg(1,value);
+        loadreg(2,address);
       end;
 
     { %dst = shl i32 %reg, 1 (= %reg shl 1) }

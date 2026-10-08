@@ -256,6 +256,7 @@ implementation
 
             Furthermore, the resume opcode only works for landingpads with a cleanup clause,
             which we only generate for outer implicitfinally frames }
+{$ifndef wasm32}
           if not(fc_catching_exceptions in flowcontrol) and
              use_cleanup(exceptframekind) then
             begin
@@ -266,6 +267,7 @@ implementation
               list.concat(taillvm.op_size_reg(la_resume,landingpadresdef,landingpadres));
             end
           else
+{$endif wasm32}
             begin
               { Need a begin_catch so that the reraise will know what exception to throw.
                 Don't need to add a "catch all" to the landing pad, as it contains one.
@@ -308,6 +310,9 @@ implementation
           landingpad: taillvm;
           begincatchres,
           typeidres,
+{$ifdef wasm32}
+          paraloc2,
+{$endif wasm32}
           paraloc1: tcgpara;
           pd: tprocdef;
           landingpadstructdef,
@@ -349,6 +354,30 @@ implementation
             wrappedExceptionObject is the exception returned by the landingpad }
           landingpadres:=landingpad.oper[0]^.reg;
           landingpadstructdef:=landingpad.oper[1]^.def;
+{$ifdef wasm32}
+          wrappedexception:=hlcg.getaddressregister(list,voidpointertype);
+          list.concat(taillvm.extract(la_extractvalue,wrappedexception,landingpadstructdef,landingpadres,0));
+          if assigned(excepttype) then
+            begin
+              { Wasm catches the ABI tag first; match Pascal class inheritance
+                explicitly without exposing Pascal VMTs to a C++ personality. }
+              paraloc2.init;
+              pd:=search_system_proc('fpc_psabi_wasm_matches');
+              paramanager.getcgtempparaloc(list,pd,1,paraloc1);
+              paramanager.getcgtempparaloc(list,pd,2,paraloc2);
+              hlcg.a_load_reg_cgpara(list,voidpointertype,wrappedexception,paraloc1);
+              reference_reset_symbol(rttiref,rttisym,0,rttidef.alignment,[]);
+              rttiref.refaddr:=addr_full;
+              hlcg.a_load_ref_cgpara(list,cpointerdef.getreusable(rttidef),rttiref,paraloc2);
+              typeidres:=hlcg.g_call_system_proc(list,pd,[@paraloc1,@paraloc2],nil);
+              location_reset(exceptloc,LOC_REGISTER,def_cgsize(typeidres.def));
+              exceptloc.register:=hlcg.getintregister(list,typeidres.def);
+              hlcg.gen_load_cgpara_loc(list,typeidres.def,typeidres,exceptloc,true);
+              hlcg.a_cmp_const_reg_label(list,typeidres.def,OC_EQ,0,exceptloc.register,nextonlabel);
+              typeidres.resetiftemp;
+              paraloc2.done;
+            end;
+{$else wasm32}
           { check if the exception is handled by this node }
           if assigned(excepttype) then
             begin
@@ -373,6 +402,7 @@ implementation
 
           wrappedexception:=hlcg.getaddressregister(list,voidpointertype);
           list.concat(taillvm.extract(la_extractvalue,wrappedexception,landingpadstructdef,landingpadres,0));
+{$endif wasm32}
 
           pd:=search_system_proc('fpc_psabi_begin_catch');
           paramanager.getcgtempparaloc(list, pd, 1, paraloc1);

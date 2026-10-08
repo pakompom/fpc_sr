@@ -87,6 +87,8 @@ const
      'STANDARD'
    );
 
+   fputypestrllvm: array[tfputype] of string[8] = ('','');
+
    { Supported optimizations, only used for information }
    supported_optimizerswitches = genericlevel1optimizerswitches+
                                  genericlevel2optimizerswitches+

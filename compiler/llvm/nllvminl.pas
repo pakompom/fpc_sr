@@ -147,7 +147,7 @@ implementation
         hlcg.a_load_const_reg(current_asmdata.CurrAsmList,resultdef,1,increment);
         previous:=hlcg.getintregister(current_asmdata.CurrAsmList,resultdef);
         current_asmdata.CurrAsmList.concat(taillvm.atomicrmw_reg_size_reg_reg(
-          previous,resultdef,address,increment,subtract,ordering));
+          previous,resultdef,address,increment,tllvmatomicop(ord(subtract)),ordering));
         if subtract then
           op:=OP_SUB
         else
@@ -293,7 +293,7 @@ implementation
 
     function tllvminlinenode.first_fma: tnode;
       var
-        exceptmode: ansistring;
+        exceptmode,roundmode: ansistring;
         procname: string[40];
       begin
         if cs_opt_fastmath in current_settings.optimizerswitches then
@@ -324,9 +324,10 @@ implementation
                 internalerror(2019122811);
             end;
             exceptmode:=llvm_constrainedexceptmodestring;
+            roundmode:=llvm_constrainedroundmodestring;
             result:=ccallnode.createintern(procname,
               ccallparanode.create(cstringconstnode.createpchar(ansistring2pchar(exceptmode),length(exceptmode),llvm_metadatatype),
-                ccallparanode.create(cstringconstnode.createpchar(ansistring2pchar('round.dynamic'),length('round.dynamic'),llvm_metadatatype),
+                ccallparanode.create(cstringconstnode.createpchar(ansistring2pchar(roundmode),length(roundmode),llvm_metadatatype),
                   left
                 )
               )
@@ -385,7 +386,7 @@ implementation
             if inf_pc24_lowered in inlinenodeflags then
               roundmode:='round.tonearest'
             else
-              roundmode:='round.dynamic';
+              roundmode:=llvm_constrainedroundmodestring;
             result:=ccallnode.createintern(intrinsic,
               ccallparanode.create(cstringconstnode.createpchar(ansistring2pchar(exceptmode),length(exceptmode),llvm_metadatatype),
                 ccallparanode.create(cstringconstnode.createpchar(ansistring2pchar(roundmode),length(roundmode),llvm_metadatatype),
@@ -399,7 +400,7 @@ implementation
 
 
     function tllvminlinenode.lower_real_to_int64: tnode;
-{$if defined(aarch64) or defined(x86_64)}
+{$if defined(aarch64) or defined(x86_64) or defined(wasm32)}
       var
         statements: tstatementnode;
         argumenttemp, resulttemp: ttempcreatenode;
@@ -410,7 +411,7 @@ implementation
 {$endif}
       begin
         result:=nil;
-{$if defined(aarch64) or defined(x86_64)}
+{$if defined(aarch64) or defined(x86_64) or defined(wasm32)}
         { Use the native Double conversion ABI. Targets whose RTL takes
           Extended retain its x87 rounding semantics. Invalid values still
           go through the target RTL, which determines their result. }
@@ -427,6 +428,10 @@ implementation
           argument:=@tcallparanode(left).left
         else
           argument:=@left;
+{$ifdef wasm32}
+        if is_single(argument^.resultdef) then
+          inserttypeconv_internal(argument^,s64floattype);
+{$endif}
         if not is_double(argument^.resultdef) then
           exit;
         result:=internalstatements(statements);
@@ -450,10 +455,19 @@ implementation
         callparameters:=ccallparanode.create(ctemprefnode.create(argumenttemp),nil);
         if inlinenumber=in_round_real then
           begin
-            intrinsic:='llvm_experimental_constrained_lrint_i64_f64';
             helper:='fpc_round_real';
+{$ifdef wasm32}
+            { Wasm has nearest-even rounding but no integer rint operation.
+              LLVM lrint lowers to a libc call; nearbyint + bounded fptosi
+              maps directly to f64.nearest followed by an i64 conversion. }
+            intrinsic:='llvm_experimental_constrained_fptosi_i64_f64';
+            callparameters:=ccallparanode.create(
+              ccallnode.createintern('llvm_nearbyint_f64',callparameters),nil);
+{$else}
+            intrinsic:='llvm_experimental_constrained_lrint_i64_f64';
             callparameters:=ccallparanode.create(cstringconstnode.createpchar(
               ansistring2pchar('round.dynamic'),length('round.dynamic'),llvm_metadatatype),callparameters);
+{$endif}
           end
         else
           begin
@@ -461,9 +475,15 @@ implementation
             helper:='fpc_trunc_real';
           end;
         callparameters:=ccallparanode.create(cstringconstnode.createpchar(
+{$ifdef wasm32}
+          ansistring2pchar('fpexcept.ignore'),length('fpexcept.ignore'),llvm_metadatatype),callparameters);
+{$else}
           ansistring2pchar('fpexcept.strict'),length('fpexcept.strict'),llvm_metadatatype),callparameters);
+{$endif}
         fastcall:=ccallnode.createintern(intrinsic,callparameters);
+{$ifndef wasm32}
         include(tcallnode(fastcall).callnodeflags,cnf_check_fpu_exceptions);
+{$endif}
         slowcall:=ccallnode.createintern(helper,
           ccallparanode.create(ctemprefnode.create(argumenttemp),nil));
         include(tcallnode(slowcall).callnodeflags,cnf_check_fpu_exceptions);
@@ -649,4 +669,3 @@ implementation
 begin
   cinlinenode:=tllvminlinenode;
 end.
-

@@ -315,8 +315,10 @@ interface
 {$endif defined(riscv)}
 {$ifdef wasm}
        ,top_functype
+{$ifndef llvm}
        ,top_single
        ,top_double
+{$endif}
 {$endif wasm}
        );
 
@@ -569,8 +571,10 @@ interface
         {$endif defined(riscv32) or defined(riscv64)}
         {$ifdef wasm}
             top_functype : (functype: TWasmFuncType);
+{$ifndef llvm}
             top_single : (sval:single);
             top_double : (dval:double);
+{$endif}
         {$endif wasm}
         end;
         poper=^toper;

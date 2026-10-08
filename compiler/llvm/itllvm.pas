@@ -46,7 +46,7 @@ interface
         { memory access and memory addressing operations }
         'alloca',
         'load', 'store',
-        'fence', 'cmpxchg', 'atomicrmw',
+        'fence', 'cmpxchg', 'atomicrmw', 'load atomic', 'store atomic',
         'getelementptr',
         { conversion operations }
         'trunc', 'zext', 'sext', 'fptrunc', 'fpext',

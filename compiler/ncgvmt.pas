@@ -956,6 +956,11 @@ implementation
         hp : PCGParaLocation;
       begin
         result:=false;
+{$ifdef wasm32}
+        { Wasm indirect calls check the complete function signature. A
+          parameterless shared stub cannot stand in for arbitrary methods. }
+        exit;
+{$endif wasm32}
         if procdef.isempty then
           begin
 {$ifdef x86}
@@ -1020,6 +1025,10 @@ implementation
              begin
                procname:='FPC_ABSTRACTERROR';
                generate_abstract_stub(current_asmdata.AsmLists[al_procedures],vmtpd);
+{$ifdef wasm32}
+               { The per-method stub has the required Wasm table signature. }
+               procname:=vmtpd.mangledname;
+{$endif wasm32}
              end
            else if (cs_opt_remove_empty_proc in current_settings.optimizerswitches) and RedirectToEmpty(vmtpd) then
              begin

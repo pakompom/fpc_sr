@@ -106,7 +106,7 @@ implementation
                  not(anf_pc24_exact_scale in addnodeflags) then
                 roundmode:='round.tonearest'
               else
-                roundmode:='round.dynamic';
+                roundmode:=llvm_constrainedroundmodestring;
               result:=ccallnode.createintern(intrname,
                 ccallparanode.create(cstringconstnode.createpchar(ansistring2pchar(exceptmode),length(exceptmode),llvm_metadatatype),
                   ccallparanode.create(cstringconstnode.createpchar(ansistring2pchar(roundmode),length(roundmode),llvm_metadatatype),

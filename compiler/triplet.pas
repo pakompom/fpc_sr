@@ -78,6 +78,8 @@ uses
         result:=result+'-ibm-aix53'
       else if target_info.system in [system_i386_haiku] then
         result:=result+'-unknown-haiku'
+      else if target_info.system in [system_wasm32_wasip1,system_wasm32_wasip1threads] then
+        result:=result+'-unknown-wasi'
       else if target_info.system in systems_embedded then
         result:=result+'-none'
       else

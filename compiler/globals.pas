@@ -715,7 +715,11 @@ Const
         instructionset : is_arm;
 {$endif defined(ARM)}
 {$if defined(LLVM) and not defined(GENERIC_CPU)}
+{$ifdef wasm32}
+        llvmversion    : llvmver_17_0;
+{$else}
         llvmversion    : llvmver_7_0;
+{$endif}
 {$endif defined(LLVM) and not defined(GENERIC_CPU)}
       );
 

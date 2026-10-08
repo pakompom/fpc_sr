@@ -1587,7 +1587,7 @@ implementation
       tmploc.register:=fromreg;
       gen_load_loc_cgpara(list,fromsize,tmploc,frompara);
       if roundingmode then
-        a_load_reg_cgpara(list,llvm_metadatatype,tllvmmetadata.getstringreg('round.dynamic'),roundpara);
+        a_load_reg_cgpara(list,llvm_metadatatype,tllvmmetadata.getstringreg(llvm_constrainedroundmodestring),roundpara);
       exceptmode:=llvm_constrainedexceptmodestring;
       a_load_reg_cgpara(list,llvm_metadatatype,tllvmmetadata.getstringreg(exceptmode),exceptpara);
       if roundingmode then
@@ -2089,6 +2089,7 @@ implementation
     end;
 
 
+{$ifdef cpuflags}
   procedure thlcgllvm.a_jmp_flags(list: TAsmList; const f: TResFlags; l: tasmlabel);
     begin
       internalerror(2013060224);
@@ -2106,6 +2107,8 @@ implementation
       internalerror(2013060226);
     end;
 
+
+{$endif cpuflags}
 
   procedure thlcgllvm.a_bit_scan_reg_reg(list: TAsmList; reverse,not_zero: boolean; srcsize, dstsize: tdef; src, dst: tregister);
     begin

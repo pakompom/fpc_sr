@@ -4,13 +4,13 @@
 [package]
 main=rtl
 [target]
-loaders=
+loaders=$(WASM_LLVM_LOADERS)
 units=$(SYSTEMUNIT) $(SYSINIT_UNITS) $(OBJPASUNIT) $(EXTPASUNIT) $(MACPASUNIT) $(ISO7185UNIT) $(UUCHARUNIT) \
       $(WASIAPIUNIT) $(CTYPESUNIT) $(STRINGSUNIT) $(SYSCONSTUNIT)  $(SYSUTILSUNIT) \
       $(SORTBASEUNIT) $(MATHUNIT) $(RTLCONSTSUNIT) $(TYPESUNIT)  $(TYPINFOUNIT)  $(FGLUNIT) $(GETOPTSUNIT) \
       $(CHARSETUNIT)  $(CPALLUNIT) $(CHARACTERUNIT) $(FPWIDESTRINGUNIT) $(NOTHREADSUNIT) \
       $(CLASSESUNIT) $(DOSUNIT) $(RESUNIT) $(HEAPTRCUNIT) $(WASIUTILUNIT)  $(WEBASSEMBLYUNIT) \
-      $(WASMSEMUNIT)
+      $(WASMSEMUNIT) $(DYNLIBSUNIT)
 
 implicitunits= $(CP_UNITS) $(UNICODEDATAUNIT)
 
@@ -42,6 +42,7 @@ SYSINIT_UNITS=si_prc si_dll
 RESUNIT=$(FPINTRESUNIT)
 SYSUTILSDIR=$(WASICOMMONINC)
 CLASSESDIR=$(WASICOMMONINC)
+DYNLIBSINCDIR=$(WASICOMMONINC)
 RTLDEFSINCDIR=$(WASICOMMONINC)
 # Paths
 OBJPASDIR=$(RTL)/objpas
@@ -58,6 +59,17 @@ override FPC_SYSTEM_OPT += -Fi$(WASICOMMONINC)/wasiinc
 
 DOS_DEPS_OS=$(WASIAPIUNIT)$(PPUEXT) $(WASIUTILUNIT)$(PPUEXT)
 
+# Use the compiler's reported backend rather than requiring a separate
+# build flag. The ordinary loaders machinery installs the object beside
+# System's PPU, where the {$L} directive resolves it when linking a program.
+ifeq ($(strip $(shell $(FPC) -ib)),LLVM)
+WASM_LLVM_LOADERS=llvm-wasm-unwind
+endif
+
+# Honor the same LLVM tools directory as the Pascal assembler invocation.
+# CLANG may also be supplied explicitly when clang is not on PATH.
+CLANG ?= $(if $(filter -FD%,$(FPCOPT)),$(patsubst -FD%,%,$(lastword $(filter -FD%,$(FPCOPT))))/clang,clang)
+
 [rules]
 # Get the system independent include file names.
 # This will set the following variables :
@@ -73,6 +85,11 @@ SYSCPUDEPS=$(addprefix $(PROCINC)/,$(CPUINCNAMES))
 SYSDEPS=$(SYSINCDEPS) $(SYSCPUDEPS) $(WASICOMMONINC)/wasiinc/wasitypes.inc $(WASICOMMONINC)/wasiinc/wasiprocs.inc
 
 SYSUTILS_DEPS_OS=$(WASIUTILUNIT)$(PPUEXT)
+
+$(SYSTEMUNIT)$(PPUEXT): $(addsuffix $(OEXT),$(WASM_LLVM_LOADERS))
+
+llvm-wasm-unwind$(OEXT): $(PROCINC)/llvm-wasm-unwind.c | $(COMPILER_UNITTARGETDIR)
+	$(CLANG) --target=wasm32-wasi -fwasm-exceptions -ffreestanding -fno-stack-protector -O2 -c $< -o $(UNITTARGETDIRPREFIX)$@
 
 #
 # $(SYSINIT_UNITS) Units
@@ -129,5 +146,4 @@ wasiutil$(PPUEXT) : $(WASICOMMONINC)/wasiutil.pp $(WASIUTILDEPS)
 
 WASIApi.WASIUtil$(PPUEXT) :  $(NSOSDIR)/WASIApi.WASIUtil.pp $(WASIUTILDEPS)
 	$(COMPILER) $<
-
 

@@ -26,7 +26,10 @@ interface
   {$fatal The wasip1 target requires that WebAssembly threads are turned off! Maybe you want to use the wasip1threads target, instead?}
 {$endif}
 
-{$ifdef FPC_WASM_THREADS}
+{ Emscripten initializes LLVM TLS and the stack in pthread startup. Its
+  thread manager is installed by an application unit; the native WASI
+  manager must not replace the host's TLS allocation. }
+{$if defined(FPC_WASM_THREADS) and not defined(FPC_WASM_EMSCRIPTEN)}
   {$define DISABLE_NO_THREAD_MANAGER}
 {$else FPC_WASM_THREADS}
   {$define USE_NOTHREADMANAGER}
@@ -47,6 +50,7 @@ const
   maxExitCode = 65535;
   MaxPathLen = 4096;
   AllFilesMask = '*';
+  SharedSuffix = 'wasm';
 
 const
   UnusedHandle    = -1;
@@ -69,14 +73,18 @@ var
   argc: longint;
   argv: PPAnsiChar;
   envp: PPAnsiChar;
+{$ifndef CPULLVM}
   ___fpc_wasm_suspender: WasmExternRef; section 'WebAssembly.Global';
+{$endif CPULLVM}
   WasmGrowMemoryCallback : TWasmGrowMemoryCallBack;
   WasmOnException : TWasmExceptionCallBack;
   
+{$ifndef CPULLVM}
 function __fpc_get_wasm_suspender: WasmExternRef;
 procedure __fpc_set_wasm_suspender(v: WasmExternRef);
 
 property __fpc_wasm_suspender: WasmExternRef read __fpc_get_wasm_suspender write __fpc_set_wasm_suspender;
+{$endif CPULLVM}
 
 
 
@@ -84,8 +92,19 @@ Procedure DebugWriteln(aString : ShortString);
 
 implementation
 
+{$if defined(CPULLVM) and not defined(FPC_WASM_EMBEDDED_RUNTIME)}
+{ Native Wasm unwinding needs no host library. Embedded builds use the
+  surrounding C/C++ runtime's canonical exception tag and libunwind. }
+{$L llvm-wasm-unwind.o}
+{$endif}
+
 var
+{$ifdef CPULLVM}
+  WasmStackLow: byte; external name '__stack_low';
+  WasmStackHigh: byte; external name '__stack_high';
+{$else CPULLVM}
   StkLen: SizeUInt; external name '__stklen';
+{$endif CPULLVM}
 
 {$I wasitypes.inc}
 {$I wasiprocs.inc}
@@ -134,8 +153,13 @@ begin
 end;
 
 exports
+{$ifdef CPULLVM}
+  WasiAlloc name 'wasiAlloc', WasiFree name 'wasiFree';
+{$else CPULLVM}
   WasiAlloc,WasiFree;
+{$endif CPULLVM}
 
+{$ifndef CPULLVM}
 function __fpc_get_wasm_suspender: WasmExternRef;
 begin
   result:=___fpc_wasm_suspender;
@@ -145,6 +169,7 @@ procedure __fpc_set_wasm_suspender(v: WasmExternRef);
 begin
   ___fpc_wasm_suspender:=v;
 end;
+{$endif CPULLVM}
 
 function ConvertToFdRelativePath(path: RawByteString; out fd: LongInt; out relfd_path: RawByteString): Word; forward;
 
@@ -461,6 +486,7 @@ begin
   argv_size:=(argc+1)*SizeOf(PAnsiChar);
   GetMem(argv, argv_size);
   GetMem(argv_buf, argv_buf_size);
+  argv[argc]:=nil;
   if __wasi_args_get(Pointer(argv), argv_buf)<>__WASI_ERRNO_SUCCESS then
   begin
     FreeMem(argv, argv_size);
@@ -502,8 +528,15 @@ begin
 end;
 
 begin
+{$ifdef CPULLVM}
+  { Linker-defined bounds remain correct with either stack-first or the
+    default LLVM memory layout, including when other languages share it. }
+  StackLength:=PtrUInt(@WasmStackHigh)-PtrUInt(@WasmStackLow);
+  StackBottom:=@WasmStackLow;
+{$else CPULLVM}
   StackLength:=CheckInitialStkLen(stklen);
   StackBottom:=Pointer(PtrUInt(InitialHeapBlockStart)-PtrUInt(StackLength));
+{$endif CPULLVM}
   { To be set if this is a GUI or console application }
   IsConsole := TRUE;
 {$ifdef FPC_HAS_FEATURE_DYNLIBS}
@@ -521,15 +554,18 @@ begin
   InOutRes:=0;
 {$ifdef FPC_HAS_FEATURE_THREADING}
   InitSystemThreads;
-{$ifdef FPC_WASM_THREADS}
+{$if defined(FPC_WASM_THREADS) and not defined(FPC_WASM_EMSCRIPTEN)}
   InitThreadVars(@WasiRelocateThreadVar);
 {$endif}
 {$endif}
   { Setup stdin, stdout and stderr }
   SysInitStdIO;
   Setup_Environment;
+  { ObjPas.ParamStr reads argc/argv directly for nonzero arguments, so these
+    must be initialized before any user unit or program calls ParamStr. }
+  setup_arguments;
   Setup_PreopenedDirs;
-{$ifdef FPC_WASM_THREADS}
+{$if defined(FPC_WASM_THREADS) and not defined(FPC_WASM_EMSCRIPTEN)}
   TLSInfoBlock:=Nil;
 {$endif}
 end.

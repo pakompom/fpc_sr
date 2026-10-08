@@ -6,9 +6,14 @@
 
 SYSNAMES=systemh heaph mathh filerec textrec system flt_conv flt_core flt_pack sstrings innr \
          file typefile text rtti heap astrings objpas objpash except int64 \
-         generic dynarr varianth variant wstrings compproc
+         generic dynarr varianth variant wstrings compproc \
+         genmath genmathh cgenmath pc24 pc24h
 
 SYSINCNAMES=$(addsuffix .inc,$(SYSNAMES))
+
+# Generated target Makefiles may emit the shared System rule before including
+# this file. Attach these dependencies here, once their names are available.
+$(SYSTEMUNIT)$(PPUEXT): $(addprefix $(INC)/,$(SYSINCNAMES))
 
 # Other unit names which can be used for all systems
 #

@@ -4953,8 +4953,11 @@ implementation
         else
           for i:=high(args) downto 0 do
             if not args[i].registerarg then enqueue(i);
-        { Queued Delphi32 register arguments: descending demand, later source
-          argument wins ties. Target ABI placement still happens normally. }
+        { Queued Delphi32 register arguments: descending demand. This source
+          model uses the free-register tie case (later source argument first).
+          Delphi 2007 also tests its source register allocator's
+          current free mask; target registers cannot substitute for that state.
+          Target ABI placement still happens normally. }
         k:=n;
         for i:=0 to high(args) do
           if args[i].registerarg then

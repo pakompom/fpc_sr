@@ -20,7 +20,7 @@ procedure delphi_set_source_order(p: tnode; demand: word; extended_value: boolea
 
 implementation
 uses symconst,symtype,symsym,defutil,compinnr,
-  nld,ncal,ncnv,ninl,nutils;
+  nld,ncal,ncnv,ninl,nutils,ncon;
 
 function delphi_call_convention(pd: tabstractprocdef): tproccalloption;
 begin
@@ -125,6 +125,9 @@ end;
 function extra_integer(v: word): word;
 begin result:=v or ((v+64) and $3c0); end;
 
+function extra_byte(v: word): word;
+begin result:=v or ((v+4) and $3c); end;
+
 function static_address(p: tnode): boolean;
 begin
   case p.nodetype of
@@ -154,7 +157,7 @@ begin
 end;
 
 function delphi_source_demand(p: tnode): word;
-var a,b: word; para: tcallparanode; count: byte;
+var a,b: word; para: tcallparanode; count: byte; divisor: cardinal;
 begin
   if not assigned(p) then exit(0);
   if p.delphi_demand_valid then exit(p.delphi_demand);
@@ -172,10 +175,20 @@ begin
     typeconvn:
       begin
         result:=delphi_source_demand(tunarynode(p).left);
-        if is_integer(p.resultdef) and is_integer(tunarynode(p).left.resultdef) and
+        { Delphi 2007 scalar conversion demand.
+          A narrowing scalar conversion needs an integer register, and a
+          byte destination also constrains it to a byte-addressable register.
+          In particular, a call converted to Byte is not a bare call when
+          competing with another register argument. }
+        if is_ordinal(p.resultdef) and is_ordinal(tunarynode(p).left.resultdef) and
           (p.resultdef.size<>tunarynode(p).left.resultdef.size) and
-          ((p.resultdef.size=8) or (tunarynode(p).left.resultdef.size=8)) and
-          not is_constnode(tunarynode(p).left) then result:=result or $c40;
+          not is_constnode(tunarynode(p).left) then
+          begin
+            result:=result or $40;
+            if p.resultdef.size=1 then result:=result or 4;
+            if (p.resultdef.size=8) or (tunarynode(p).left.resultdef.size=8) then
+              result:=result or $c00;
+          end;
         exit;
       end;
     calln:
@@ -203,8 +216,29 @@ begin
             result:=result or $44 or delphi_source_demand(tcallnode(p).methodpointer);
             if count<3 then inc(count);
           end;
+        { Delphi 2007 annotates the indirect target separately from arguments.
+          Its address consumes another pressure slot even if the three
+          source argument registers have already been accounted for. }
+        b:=0;
+        if assigned(tcallnode(p).right) then
+          begin
+            b:=delphi_source_demand(tcallnode(p).right);
+            result:=result or b;
+          end;
         if delphi_call_convention(tcallnode(p).procdefinition)=pocall_register then
-          result:=result or ((64 shl count)-64);
+          begin
+            if b<>0 then inc(count);
+            result:=result or ((64 shl count)-64);
+          end;
+        if assigned(tcallnode(p).right) then
+          begin
+            { The source i386 code pointer occupies four bytes; a bound
+              method pointer also needs its Self half. Use the source kind,
+              not the size of pointers on the compilation target. }
+            result:=extra_integer(result);
+            if not tcallnode(p).procdefinition.is_addressonly then
+              result:=extra_integer(result);
+          end;
         exit;
       end;
     inlinen:
@@ -227,7 +261,22 @@ begin
     addrn:
       exit(delphi_source_demand(tunarynode(p).left));
     unaryminusn,notn:
-      exit(delphi_source_demand(tunarynode(p).left) or $40);
+      begin
+        result:=delphi_source_demand(tunarynode(p).left);
+        if is_integer(p.resultdef) and (p.resultdef.size=8) then
+          begin
+            result:=result or $c00;
+            if cs_check_overflow in p.localswitches then
+              result:=extra_integer(result);
+          end
+        else
+          begin
+            result:=result or $40;
+            if (p.resultdef.size=1) or (p.nodetype=notn) then
+              result:=result or 4;
+          end;
+        exit;
+      end;
     addn,subn,muln,slashn,divn,modn,shln,shrn,andn,orn,xorn,
     equaln,unequaln,ltn,lten,gtn,gten,vecn:
       begin
@@ -235,9 +284,56 @@ begin
         b:=delphi_source_demand(tbinarynode(p).right);
         if is_fpu(p.resultdef) and (p.nodetype in [addn,subn,muln,slashn]) then
           exit(a or b or ((b+1) and 3));
+        if ((is_integer(p.resultdef) and (p.resultdef.size=8)) or
+            ((p.nodetype in [equaln,unequaln,ltn,lten,gtn,gten]) and
+             is_integer(tbinarynode(p).left.resultdef) and
+             (tbinarynode(p).left.resultdef.size=8))) then
+          case p.nodetype of
+            addn,subn,andn,orn,xorn,equaln,unequaln,ltn,lten,gtn,gten:
+              begin
+                { Delphi 2007 Int64 binary-operation demand. }
+                result:=a or b or $c00;
+                if not is_constnode(tbinarynode(p).left) and
+                   not is_constnode(tbinarynode(p).right) then
+                  result:=result or $40;
+                exit;
+              end;
+            muln,divn,modn,shln,shrn:
+              exit(a or b or $1c03);
+            else
+              ;
+          end;
         case p.nodetype of
-          divn,modn: exit(a or extra_integer(b) or $c00);
-          shln,shrn: exit(a or extra_integer(b) or $10c0);
+          divn,modn:
+            begin
+              { The scalar div/mod helper is unnecessary for a nonzero
+                power-of-two immediate. Use the source i386
+                width here, independently of the target's native integer. }
+              result:=a or extra_integer(b);
+              if p.resultdef.size=1 then result:=result or extra_byte(b);
+              if tbinarynode(p).right.nodetype=ordconstn then
+                begin
+                  divisor:=cardinal(tordconstnode(tbinarynode(p).right).value.uvalue);
+                  if (divisor<>0) and ((divisor and (divisor-1))=0) then
+                    exit;
+                end;
+              result:=result or $c00;
+              exit;
+            end;
+          shln,shrn:
+            begin
+              { Constant shift counts do not reserve ECX. }
+              result:=a or extra_integer(b);
+              if not is_constnode(tbinarynode(p).right) then
+                result:=result or $10c0;
+              if tbinarynode(p).left.resultdef.size=1 then
+                begin
+                  result:=result or extra_byte(b);
+                  if not is_constnode(tbinarynode(p).right) then
+                    result:=result or $c;
+                end;
+              exit;
+            end;
           equaln,unequaln,ltn,lten,gtn,gten: exit(a or b or (((a and b)+1) and 3) or $444);
           vecn:
             begin
@@ -263,6 +359,16 @@ begin
               if a<b then result:=a or b or extra_integer(a)
               else result:=a or b or extra_integer(b);
               if (p.nodetype=subn) and (a<b) then result:=result or $c0;
+              if p.resultdef.size=1 then
+                begin
+                  if a<b then result:=result or extra_byte(a)
+                  else result:=result or extra_byte(b);
+                  if (p.nodetype=subn) and (a<b) then result:=result or $c;
+                end;
+              if (p.nodetype=muln) and (cs_check_overflow in p.localswitches) and
+                 not is_signed(tbinarynode(p).left.resultdef) and
+                 not is_signed(tbinarynode(p).right.resultdef) then
+                result:=result or $c00;
               if is_integer(p.resultdef) and (p.resultdef.size=8) then result:=result or $c40;
               exit;
             end;

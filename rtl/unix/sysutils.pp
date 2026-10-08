@@ -32,6 +32,9 @@ interface
 {$if (defined(BSD) or defined(SUNOS)) and defined(FPC_USE_LIBC)}
 {$define USE_VFORK}
 {$endif}
+{$if defined(FPC_USE_LIBC) and not defined(ANDROID) and (defined(BSD) or defined(LINUX) or defined(SUNOS))}
+{$define USE_POSIX_SPAWN}
+{$endif}
 {$DEFINE HAS_FILEGETDATETIMEINFO}
 {$DEFINE OS_FILESETDATEBYNAME}
 {$DEFINE HAS_SLEEP}
@@ -1599,10 +1602,70 @@ begin
 end;
 
 
+{$ifdef USE_POSIX_SPAWN}
+{ No actions or attributes are needed: inherit the environment, working
+  directory and file descriptors just as fork/exec does. Avoiding fork matters
+  for callers with a large address space, such as the compiler. }
+function SysPosixSpawn(var Pid: TPid; Path: PAnsiChar;
+  FileActions, Attributes: Pointer; Args, Env: PPAnsiChar): cint;
+  cdecl; weakexternal clib name 'posix_spawn';
+{$endif}
+
+function ExecuteProcessArgv(const Path: RawByteString; Args: PPAnsiChar): integer;
+var
+  Pid: TPid;
+  E: EOSError;
+{$ifdef USE_POSIX_SPAWN}
+  SpawnError: cint;
+{$endif}
+begin
+{$ifdef USE_POSIX_SPAWN}
+  { Retain support for older libc versions without posix_spawn. }
+  if @SysPosixSpawn<>nil then
+    begin
+      SpawnError:=SysPosixSpawn(Pid,PAnsiChar(Path),nil,nil,Args,envp);
+      if SpawnError<>0 then
+        begin
+          { Preserve ExecuteProcess's distinction between process creation
+            failure (-1) and an executable that cannot be run (127). Some
+            implementations report the latter directly; others create a
+            child that exits with 127. }
+          if (SpawnError=ESysEAGAIN) or (SpawnError=ESysENOMEM) then
+            Result:=-1
+          else
+            Result:=127;
+        end
+      else
+        Result:=WaitProcess(Pid);
+    end
+  else
+{$endif}
+  begin
+  {$ifdef USE_VFORK}
+    Pid:=fpvFork;
+  {$else}
+    Pid:=fpFork;
+  {$endif}
+    if Pid=0 then
+      begin
+        fpExecve(PAnsiChar(Path),Args,envp);
+        fpExit(127);
+      end;
+    if Pid=-1 then
+      Result:=-1
+    else
+      Result:=WaitProcess(Pid);
+  end;
+  if (Result<0) or (Result=127) then
+    begin
+      E:=EOSError.CreateFmt(SExecuteProcessFailed,[Path,Result]);
+      E.ErrorCode:=Result;
+      raise E;
+    end;
+end;
+
 function ExecuteProcess(Const Path: RawByteString; Const ComLine: RawByteString;Flags:TExecuteFlags=[]):integer;
 var
-  pid    : longint;
-  e      : EOSError;
   CommandLine: RawByteString;
   LPath  : RawByteString;
   cmdline2 : PPAnsiChar;
@@ -1636,71 +1699,33 @@ Begin
        cmdline2[1]:=nil;
      end;
 
-  {$ifdef USE_VFORK}
-  pid:=fpvFork;
-  {$else USE_VFORK}
-  pid:=fpFork;
-  {$endif USE_VFORK}
-  if pid=0 then
-   begin
-   {The child does the actual exec, and then exits}
-      fpexecve(PAnsiChar(pointer(LPath)),Cmdline2,envp);
-   { If the execve fails, we return an exitvalue of 127, to let it be known}
-     fpExit(127);
-   end
-  else
-   if pid=-1 then         {Fork failed}
-    begin
-      e:=EOSError.CreateFmt(SExecuteProcessFailed,[LPath,-1]);
-      e.ErrorCode:=-1;
-      raise e;
-    end;
-
-  { We're in the parent, let's wait. }
-  result:=WaitProcess(pid); // WaitPid and result-convert
-
-  if Comline<>'' Then
+  try
+    Result:=ExecuteProcessArgv(LPath,cmdline2);
+  finally
     freemem(cmdline2);
-
-  if (result<0) or (result=127) then
-    begin
-    E:=EOSError.CreateFmt(SExecuteProcessFailed,[LPath,result]);
-    E.ErrorCode:=result;
-    Raise E;
-    end;
+  end;
 End;
 
 function ExecuteProcess(Const Path: RawByteString; Const ComLine: Array Of RawByteString;Flags:TExecuteFlags=[]):integer;
 
 var
-  pid    : longint;
-  e      : EOSError;
+  LPath: RawByteString;
+  Arguments: array of RawByteString;
+  Argv: array of PAnsiChar;
+  I: SizeInt;
 Begin
-  pid:=fpFork;
-  if pid=0 then
-   begin
-     {The child does the actual exec, and then exits}
-      fpexecl(Path,Comline);
-     { If the execve fails, we return an exitvalue of 127, to let it be known}
-     fpExit(127);
-   end
-  else
-   if pid=-1 then         {Fork failed}
+  LPath:=ToSingleByteFileSystemEncodedFileName(Path);
+  SetLength(Arguments,Length(ComLine));
+  SetLength(Argv,Length(ComLine)+2);
+  { fpExecL historically uses the original pathname for argv[0]. }
+  Argv[0]:=PAnsiChar(Path);
+  for I:=0 to High(ComLine) do
     begin
-      e:=EOSError.CreateFmt(SExecuteProcessFailed,[Path,-1]);
-      e.ErrorCode:=-1;
-      raise e;
+      Arguments[I]:=ToSingleByteFileSystemEncodedFileName(ComLine[I]);
+      Argv[I+1]:=PAnsiChar(Arguments[I]);
     end;
-
-  { We're in the parent, let's wait. }
-  result:=WaitProcess(pid); // WaitPid and result-convert
-
-  if (result<0) or (result=127) then
-    begin
-    E:=EOSError.CreateFmt(SExecuteProcessFailed,[Path,result]);
-    E.ErrorCode:=result;
-    raise E;
-    end;
+  Argv[High(Argv)]:=nil;
+  Result:=ExecuteProcessArgv(LPath,@Argv[0]);
 End;
 
 

@@ -557,7 +557,7 @@ interface
             top_extended80 : (eval:extended);
           {$endif cpuextended}
             top_tai    : (ai: tai);
-            top_def    : (def: tdef);
+            top_def    : (def: tdef; defderef: tderef);
             top_cond   : (cond: topcmp);
             top_fpcond : (fpcond: tllvmfpcmp);
             top_para   : (paras: tfplist);

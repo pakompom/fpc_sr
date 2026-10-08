@@ -633,6 +633,10 @@ begin
   Compile;
   // child's own CRC is unchanged, so reload its references without recompiling.
   CheckCompiled(['reloadclass_prg.pas','reloadclass_base.pas','reloadclass_control.pas']);
+
+  Step:='Third compile';
+  Compile;
+  CheckCompiled(['reloadclass_prg.pas']);
 end;
 
 procedure TTestRecompile.TestCycle3_ChangeC;

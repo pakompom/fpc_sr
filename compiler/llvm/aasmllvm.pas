@@ -29,7 +29,7 @@ interface
       globtype,verbose,cclasses,
       aasmbase,aasmtai,aasmdata,aasmdef,aasmsym,aasmcnst,
       cpubase,cgbase,cgutils,
-      symtype,symdef,symsym,
+      symbase,symtype,symdef,symsym,
       llvmbase;
 
     type
@@ -37,6 +37,12 @@ interface
 
       { taillvm }
       taillvm = class(tai_cpu_abstract_sym)
+       private
+        refs_built: boolean;
+       protected
+        procedure ppubuildderefimploper(var o:toper);override;
+        procedure ppuderefoper(var o:toper);override;
+       public
        const
         callpdopernr = 3;
        var
@@ -45,6 +51,8 @@ interface
 
         constructor create_llvm(op: tllvmop);
         destructor Destroy; override;
+        procedure buildderefimpl; override;
+        procedure derefimpl; override;
 
         { e.g. unreachable }
         constructor op_none(op : tllvmop);
@@ -182,10 +190,16 @@ interface
       );
 
     taillvmalias = class(tailineinfo)
+      private
+        defderef: tderef;
+        refs_built: boolean;
+      public
       bind: tasmsymbind;
       oldsym, newsym: TAsmSymbol;
       def: tdef;
       constructor create(_oldsym: tasmsymbol; const newname: TSymStr; _def: tdef; _bind: tasmsymbind);
+      procedure buildderefimpl; override;
+      procedure derefimpl; override;
     end;
 
     taillvmdeclflag =
@@ -202,6 +216,10 @@ interface
     { declarations/definitions of symbols (procedures, variables), both defined
       here and external }
     taillvmdecl = class(tai)
+      private
+        defderef, symderef: tderef;
+        refs_built: boolean;
+      public
       { initialisation data, if any }
       initdata: tasmlist;
       namesym: tasmsymbol;
@@ -220,6 +238,8 @@ interface
       procedure setsecname(const name: TSymStr);
       procedure addinsmetadata(insmeta: tai);
       destructor destroy; override;
+      procedure buildderefimpl; override;
+      procedure derefimpl; override;
     end;
 
     tllvmcallparaflag = (lcp_byval, lcp_sret, lcp_metadata);
@@ -239,6 +259,7 @@ interface
     { parameter to an llvm call instruction }
     tllvmcallpara = object
       def: tdef;
+      defderef, localsymderef: tderef;
       alignment: shortint;
       valueext: tllvmvalueextension;
       flags: tllvmcallparaflags;
@@ -258,6 +279,8 @@ interface
 
     TLLVMAsmData = class(TAsmDataDef)
      fnextmetaid: cardinal;
+     procedure buildderefimpl; override;
+     procedure derefimpl; override;
     end;
 
 
@@ -267,6 +290,136 @@ implementation
       cutils, strings,
       symconst,
       aasmcpu;
+
+    procedure TLLVMAsmData.buildderefimpl;
+      var
+        listtype: TAsmListType;
+      begin
+        for listtype:=low(TAsmListType) to high(TAsmListType) do
+          if assigned(AsmLists[listtype]) then
+            AsmLists[listtype].buildderefimpl;
+      end;
+
+
+    procedure TLLVMAsmData.derefimpl;
+      var
+        listtype: TAsmListType;
+      begin
+        for listtype:=low(TAsmListType) to high(TAsmListType) do
+          if assigned(AsmLists[listtype]) then
+            AsmLists[listtype].derefimpl;
+      end;
+
+
+    procedure taillvmalias.buildderefimpl;
+      begin
+        defderef.build(def);
+        refs_built:=true;
+      end;
+
+
+    procedure taillvmalias.derefimpl;
+      begin
+        if refs_built then
+          def:=tdef(defderef.resolve);
+      end;
+
+
+    procedure taillvmdecl.buildderefimpl;
+      begin
+        defderef.build(def);
+        symderef.build(sym);
+        if assigned(initdata) then
+          initdata.buildderefimpl;
+        refs_built:=true;
+      end;
+
+
+    procedure taillvmdecl.derefimpl;
+      begin
+        if not refs_built then
+          exit;
+        def:=tdef(defderef.resolve);
+        sym:=tsym(symderef.resolve);
+        if assigned(initdata) then
+          initdata.derefimpl;
+      end;
+
+
+    procedure taillvm.buildderefimpl;
+      begin
+        inherited buildderefimpl;
+        refs_built:=true;
+      end;
+
+
+    procedure taillvm.derefimpl;
+      begin
+        { Code emitted after the interface snapshot has no stored references. }
+        if refs_built then
+          inherited derefimpl;
+      end;
+
+
+    procedure taillvm.ppubuildderefimploper(var o: toper);
+      var
+        i: longint;
+        para: pllvmcallpara;
+      begin
+        case o.typ of
+          top_def:
+            o.defderef.build(o.def);
+          top_tai:
+            if assigned(o.ai) then
+              o.ai.buildderefimpl;
+          top_asmlist:
+            o.asmlist.buildderefimpl;
+          top_para:
+            for i:=0 to o.paras.count-1 do
+              begin
+                para:=pllvmcallpara(o.paras[i]);
+                para^.defderef.build(para^.def);
+                case para^.val.typ of
+                  top_tai: para^.val.ai.buildderefimpl;
+                  top_local: para^.localsymderef.build(para^.val.localsym);
+                  else ;
+                end;
+              end;
+          else
+            inherited ppubuildderefimploper(o);
+        end;
+      end;
+
+
+    procedure taillvm.ppuderefoper(var o: toper);
+      var
+        i: longint;
+        para: pllvmcallpara;
+      begin
+        case o.typ of
+          top_def:
+            o.def:=tdef(o.defderef.resolve);
+          top_tai:
+            if assigned(o.ai) then
+              o.ai.derefimpl;
+          top_asmlist:
+            o.asmlist.derefimpl;
+          top_para:
+            for i:=0 to o.paras.count-1 do
+              begin
+                para:=pllvmcallpara(o.paras[i]);
+                para^.def:=tdef(para^.defderef.resolve);
+                case para^.val.typ of
+                  top_tai: para^.val.ai.derefimpl;
+                  top_local: para^.val.localsym:=tsym(para^.localsymderef.resolve);
+                  else ;
+                end;
+              end;
+          else
+            inherited ppuderefoper(o);
+        end;
+      end;
+
 
     { taillvmprocdecl }
 

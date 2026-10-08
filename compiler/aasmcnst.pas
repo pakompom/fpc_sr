@@ -44,8 +44,12 @@ type
      fadetyp: ttypedconstkind;
      { the def of this element }
      fdef: tdef;
+     fdefderef: tderef;
+     frefs_built: boolean;
     public
      constructor create(_adetyp: ttypedconstkind; _def: tdef);
+     procedure buildderefimpl; override;
+     procedure derefimpl; override;
      property adetyp: ttypedconstkind read fadetyp;
      property def: tdef read fdef write setdef;
    end;
@@ -58,6 +62,8 @@ type
      fval: tai;
     public
      constructor create(_def: tdef; _val: tai);
+     procedure buildderefimpl; override;
+     procedure derefimpl; override;
      destructor destroy; override;
      property val: tai read fval write setval;
    end;
@@ -89,6 +95,8 @@ type
      procedure add_to_string(strtai: tai_string; othertai: tai);
     public
      constructor create(_adetyp: ttypedconstkind; _fdef: tdef);
+     procedure buildderefimpl; override;
+     procedure derefimpl; override;
      function getenumerator: tadeenumerator;
      procedure addvalue(val: tai_abstracttypedconst); virtual;
      function valuecount: longint;
@@ -645,6 +653,25 @@ implementation
      end;
 
 
+   procedure tai_abstracttypedconst.buildderefimpl;
+     begin
+       inherited buildderefimpl;
+       fdefderef.build(fdef);
+       frefs_built:=true;
+     end;
+
+
+   procedure tai_abstracttypedconst.derefimpl;
+     begin
+       { Constants generated after the interface snapshot already contain
+         current references and have no saved dereference data. }
+       if not frefs_built then
+         exit;
+       inherited derefimpl;
+       fdef:=tdef(fdefderef.resolve);
+     end;
+
+
 {****************************************************************************
                                 tai_simpletypedconst
  ****************************************************************************}
@@ -659,6 +686,24 @@ implementation
      begin
        inherited create(tck_simple,_def);
        fval:=_val;
+     end;
+
+
+   procedure tai_simpletypedconst.buildderefimpl;
+     begin
+       inherited buildderefimpl;
+       if assigned(fval) then
+         fval.buildderefimpl;
+     end;
+
+
+   procedure tai_simpletypedconst.derefimpl;
+     begin
+       if not frefs_built then
+         exit;
+       inherited derefimpl;
+       if assigned(fval) then
+         fval.derefimpl;
      end;
 
 
@@ -762,6 +807,28 @@ implementation
        inherited;
        fisstring:=false;
        fvalues:=tfpobjectlist.create(true);
+     end;
+
+
+   procedure tai_aggregatetypedconst.buildderefimpl;
+     var
+       i: longint;
+     begin
+       inherited buildderefimpl;
+       for i:=0 to fvalues.count-1 do
+         tai_abstracttypedconst(fvalues[i]).buildderefimpl;
+     end;
+
+
+   procedure tai_aggregatetypedconst.derefimpl;
+     var
+       i: longint;
+     begin
+       if not frefs_built then
+         exit;
+       inherited derefimpl;
+       for i:=0 to fvalues.count-1 do
+         tai_abstracttypedconst(fvalues[i]).derefimpl;
      end;
 
 

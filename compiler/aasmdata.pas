@@ -165,6 +165,8 @@ interface
          procedure concatListcopy(p : TLinkedList); override;
          { removes all items from the list, the items are not freed }
          procedure RemoveAll; override;
+         procedure buildderefimpl;
+         procedure derefimpl;
       end;
 
       TAsmCFI=class
@@ -210,6 +212,9 @@ interface
         ResStrInits   : TLinkedList;
         constructor create(n: pshortstring);
         destructor  destroy;override;
+        { Preserve backend type references across dependency recompilation. }
+        procedure buildderefimpl;virtual;
+        procedure derefimpl;virtual;
         { asmsymbol }
         function  DefineAsmSymbolByClass(symclass: TAsmSymbolClass; const s : TSymStr;_bind:TAsmSymBind;_typ:Tasmsymtype; def: tdef) : TAsmSymbol; virtual;
         function  DefineAsmSymbol(const s : TSymStr;_bind:TAsmSymBind;_typ:Tasmsymtype; def: tdef) : TAsmSymbol;
@@ -455,9 +460,45 @@ implementation
       end;
 
 
+    procedure TAsmList.buildderefimpl;
+      var
+        p: tai;
+      begin
+        p:=tai(first);
+        while assigned(p) do
+          begin
+            p.buildderefimpl;
+            p:=tai(p.next);
+          end;
+      end;
+
+
+    procedure TAsmList.derefimpl;
+      var
+        p: tai;
+      begin
+        p:=tai(first);
+        while assigned(p) do
+          begin
+            p.derefimpl;
+            p:=tai(p.next);
+          end;
+      end;
+
+
 {****************************************************************************
                                 TAsmData
 ****************************************************************************}
+
+    procedure TAsmData.buildderefimpl;
+      begin
+      end;
+
+
+    procedure TAsmData.derefimpl;
+      begin
+      end;
+
 
     function TAsmData.GetConstPools(APoolType: TConstPoolType): THashSet;
       begin

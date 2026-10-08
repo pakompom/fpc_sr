@@ -158,7 +158,7 @@ uses
   symtable, symsym,
   wpoinfo,
   scanner,
-  aasmbase,ogbase,
+  aasmbase,aasmdata,ogbase,
   comphook,
   entfile,fpkg,fpcp;
 
@@ -241,6 +241,10 @@ var
               tstoredsymtable(localsymtable).derefimpl(true);
           end;
         derefimportedsymbols;
+        { Only interface IR remains to be emitted. After implementation code
+          generation the object is written and getppucrc rebuilds derefdata. }
+        if (state=ms_compiling_waitimpl) and assigned(asmdata) then
+          TAsmData(asmdata).derefimpl;
         if assigned(wpoinfo) then
           begin
             tunitwpoinfo(wpoinfo).deref;
@@ -2024,6 +2028,11 @@ var
          ppufile.writeheader;
 
          discardppu;
+         { Interface constants can retain backend type references while this
+           unit waits for its implementation dependencies. Snapshot them after
+           the interface CRC pass, which resets the module's dereference data. }
+         if in_interface and assigned(asmdata) then
+           TAsmData(asmdata).buildderefimpl;
       end;
 
     function tppumodule.dependent_module_has_our_crc: boolean;

@@ -1995,22 +1995,35 @@ end;
 {$endif}
 
 
+{$ifdef FPC_USE_PC24_MATH}
+{$push}{$LEGACYPC24 ON}
+{$endif}
 function power(base,exponent : float) : float;
   begin
+{$ifdef FPC_USE_PC24_MATH}
+    { Delphi 2007 dispatches integral exponents before testing the base. Thus
+      zero to a negative integer still divides by zero, but the fractional
+      branch returns the original zero, including its sign (or an unordered
+      base). Compare with Int rather than subtracting with Frac: PC24 rounding
+      could otherwise turn a tiny nonzero fraction into zero. Both the product
+      below and Exp must use the same PC24 stages as IntPower. }
+    if (abs(exponent)<=maxint) and (exponent=int(exponent)) then
+      result:=intpower(base,trunc(exponent))
+    else if (base=0.0) or IsNan(base) then
+      result:=base
+{$else}
     if Exponent=0.0 then
       result:=1.0
     else if (base=0.0) and (exponent>0.0) then
       result:=0.0
     else if (frac(exponent)=0.0) and (abs(exponent)<=maxint) then
       result:=intpower(base,trunc(exponent))
+{$endif}
     else
       result:=exp(exponent * ln (base));
   end;
 
 
-{$ifdef FPC_USE_PC24_MATH}
-{$push}{$LEGACYPC24 ON}
-{$endif}
 function intpower(base : float;exponent : longint) : float;
 {$ifdef FPC_USE_PC24_MATH}
   var

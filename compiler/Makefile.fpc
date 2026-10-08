@@ -382,7 +382,7 @@ override LOCALOPT+=-d$(CPC_TARGET)
 
 #include LLVM define/directory if requested
 ifdef LLVM
-ifeq ($(findstring $(PPC_TARGET),x86_64 aarch64 arm),)
+ifeq ($(findstring $(PPC_TARGET),x86_64 aarch64 arm wasm32),)
 $(error The $(PPC_TARGET) architecture is not (yet) supported by the FPC/LLVM code generator)
 endif
 

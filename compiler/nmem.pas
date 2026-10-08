@@ -154,6 +154,7 @@ interface
 
        tvecnode = class(tbinarynode)
        protected
+          function lower_delphi_order: tnode;
           function first_arraydef : tnode; virtual;
           function gen_array_rangecheck: tnode; virtual;
        public
@@ -194,7 +195,7 @@ implementation
 {$ifdef i8086}
       cpuinfo,
 {$endif i8086}
-      htypechk,pass_1,ncal,nld,ncon,ncnv,cgbase,procinfo,widestr
+      htypechk,pass_1,ncal,nld,ncon,ncnv,cgbase,procinfo,widestr,delphiorder
       ;
 
 {*****************************************************************************
@@ -1116,6 +1117,8 @@ implementation
          newordtyp: tordtype;
          valid : boolean;
          minvalue, maxvalue: Tconstexprint;
+         source_index_demand: word;
+         source_index_calllike: boolean;
       begin
          result:=nil;
          typecheckpass(left);
@@ -1151,6 +1154,36 @@ implementation
          set_varstate(right,vs_read,[vsf_must_be_valid]);
          if codegenerror then
           exit;
+
+         { Index widths below belong to the target address arithmetic. They
+           must not change the Delphi32 source scheduling demand. }
+         source_index_demand:=0;
+         source_index_calllike:=false;
+         if cs_delphi_order in localswitches then
+           begin
+             source_index_demand:=delphi_source_demand(right);
+             source_index_calllike:=delphi_prefix_capturable(right);
+             { Delphi 2007 extracts x86 address scales up to eight; other strides
+               leave an integer multiply in the index.
+               Its constant operand adds one integer pressure slot. }
+             if (left.resultdef.typ=arraydef) and
+                not is_constnode(right) and
+                not(tarraydef(left.resultdef).elesize in [1,2,4,8]) then
+               source_index_demand:=source_index_demand or $40;
+             { Delphi 2007 range-check demand uses the declared range type,
+               not the target index width.
+               A byte-sized range check can change which operand wins a tie. }
+             if (cs_check_range in localswitches) and
+                is_normal_array(left.resultdef) and not is_constnode(right) then
+               begin
+                 source_index_demand:=source_index_demand or $40;
+                 if tarraydef(left.resultdef).rangedef.size=1 then
+                   source_index_demand:=source_index_demand or 4;
+                 if (tarraydef(left.resultdef).rangedef.size=8) or
+                    (right.resultdef.size=8) then
+                   source_index_demand:=source_index_demand or $c00;
+               end;
+           end;
 
          { maybe type conversion for the index value, but
            do not convert range nodes }
@@ -1280,6 +1313,9 @@ implementation
                inserttypeconv(right,sinttype);
            end;
 
+         if cs_delphi_order in localswitches then
+           delphi_set_source_order(right,source_index_demand,false,source_index_calllike);
+
          { although we never put regular arrays or shortstrings in registers,
            it's possible that another type was typecasted to a small record
            that has a field of one of these types -> in that case the record
@@ -1399,9 +1435,55 @@ implementation
       end;
 
 
+    function tvecnode.lower_delphi_order: tnode;
+      var
+        statements: tstatementnode;
+        temp: ttempcreatenode;
+        access: tvecnode;
+        source_demand: word;
+        source_extended: boolean;
+      begin
+        result:=nil;
+        if not(cs_delphi_order in localswitches) or
+           delphi_ordered or
+           (right.nodetype=rangen) or is_constnode(right) or
+           is_open_array(left.resultdef) or is_array_of_const(left.resultdef) or
+           is_packed_array(left.resultdef) or
+           ((vnf_callunique in vecnodeflags) and is_string(left.resultdef)) or
+           not(might_have_sideeffects(left) or might_have_sideeffects(right)) then
+          exit;
+        { Delphi 2007 indexed-address scheduling:
+          the base precedes the index only for strictly greater demand.
+          Ordinary code generation already implements that base-first case.
+          Otherwise save the index before even loading a mutable base pointer.
+          Do not copy an array value: the final node must remain an lvalue. }
+        if delphi_source_demand(left)>delphi_source_demand(right) then
+          exit;
+        source_demand:=delphi_source_demand(self);
+        source_extended:=delphi_source_extended(self);
+        result:=internalstatements(statements);
+        temp:=ctempcreatenode.create(right.resultdef,right.resultdef.size,tt_persistent,true);
+        addstatement(statements,temp);
+        addstatement(statements,cassignmentnode.create(ctemprefnode.create(temp),right));
+        access:=cvecnode.create(left,ctemprefnode.create(temp));
+        access.flags:=flags;
+        access.delphi_ordered:=true;
+        access.localswitches:=localswitches;
+        access.vecnodeflags:=vecnodeflags;
+        delphi_set_source_order(access,source_demand,source_extended);
+        left:=nil;
+        right:=nil;
+        addstatement(statements,ctempdeletenode.create_normal_temp(temp));
+        addstatement(statements,access);
+        result.localswitches:=localswitches;
+        delphi_set_source_order(result,source_demand,source_extended);
+      end;
+
+
     function tvecnode.pass_1 : tnode;
       begin
-         result:=nil;
+         result:=lower_delphi_order;
+         if assigned(result) then exit;
          firstpass(left);
          firstpass(right);
          if codegenerror then

@@ -47,7 +47,7 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
   native ARM64, x86-64, i386 and Wasm32 backends. Native ARM requires
   double-precision VFP (VFPv2 or later). Single/Double expressions use hardware
   operations with corrections at rounding boundaries; native i386 arithmetic
-  and x86 Extended operands use x87 helpers. Native Wasm uses a software FMA
+  and x86 Extended operands use x87 helpers. Both Wasm backends use a software FMA
   for the residual corrections. The mode requires nearest-even rounding and
   `-OoNOFASTMATH`. It does not provide general x87 exception or transcendental
   emulation, or preserve x87's exponent range in the Single/Double paths.

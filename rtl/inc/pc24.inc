@@ -17,6 +17,11 @@ type
       True: (bits: QWord);
   end;
 
+{$ifdef CPUWASM32}
+{ WebAssembly has no FMA instruction, and standalone WASI links have no
+  libm supplying LLVM's fma libcall. Keep the residual exact in both backends. }
+{$I pc24fma.inc}
+{$else CPUWASM32}
 {$ifdef CPULLVM}
 { LLVM lowers the intrinsic to an instruction or an exact library operation,
   including on baseline x86-64 processors without the FMA instruction set. }
@@ -32,7 +37,7 @@ asm
   fmadd d0,d0,d1,d2
 end;
 {$else CPUAARCH64}
-{$if defined(CPUWASM32) or not defined(UNIX)}
+{$ifndef UNIX}
 {$I pc24fma.inc}
 {$else}
 { The native bootstrap compiler may not support an FMA intrinsic for its
@@ -42,6 +47,7 @@ function pc24_fma(a,b,c: Double): Double; cdecl;
 {$endif}
 {$endif CPUAARCH64}
 {$endif CPULLVM}
+{$endif CPUWASM32}
 
 function fpc_pc24_midpoint(v: Double): Boolean; inline;
 var

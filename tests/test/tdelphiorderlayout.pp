@@ -11,6 +11,12 @@ var
   OldReal,NewReal: TRealEntries;
   OldPointers,NewPointers: TPointerEntries;
   OldMethods,NewMethods: TMethodEntries;
+  OldSetHead,NewSetHead: TSetHeadEntries;
+  OldSetTail,NewSetTail: TSetTailEntries;
+  OldSetThree,NewSetThree: TSetThreeEntries;
+  OldSetOffset,NewSetOffset: TSetOffsetEntries;
+  OldNativeSigned,NewNativeSigned: TNativeSignedEntries;
+  OldNativeUnsigned,NewNativeUnsigned: TNativeUnsignedEntries;
   Current,Next,Selected: Pointer;
   Trace: AnsiString;
 
@@ -28,6 +34,18 @@ function PointerBase: PPointerEntries;
 begin Trace:=Trace+'B'; Result:=Current end;
 function MethodBase: PMethodEntries;
 begin Trace:=Trace+'B'; Result:=Current end;
+function SetHeadBase: PSetHeadEntries;
+begin Trace:=Trace+'B'; Result:=Current end;
+function SetTailBase: PSetTailEntries;
+begin Trace:=Trace+'B'; Result:=Current end;
+function SetThreeBase: PSetThreeEntries;
+begin Trace:=Trace+'B'; Result:=Current end;
+function SetOffsetBase: PSetOffsetEntries;
+begin Trace:=Trace+'B'; Result:=Current end;
+function NativeSignedBase: PNativeSignedEntries;
+begin Trace:=Trace+'B'; Result:=Current end;
+function NativeUnsignedBase: PNativeUnsignedEntries;
+begin Trace:=Trace+'B'; Result:=Current end;
 function ChooseIndex: Integer;
 begin Trace:=Trace+'I'; Current:=Next; Result:=0 end;
 
@@ -36,6 +54,35 @@ begin Current:=OldValue; Next:=NewValue; Trace:='' end;
 procedure Check(const Expected: AnsiString; Storage: Pointer; Code: Integer);
 begin
   if (Trace<>Expected) or (Selected<>Storage) then Halt(Code);
+end;
+
+procedure CheckLocalTypes;
+type
+  { A user type with the same name is not System.NativeInt. }
+  NativeInt = type Integer;
+  TShadow = record Value: NativeInt; Link: Pointer end;
+  TShadows = array[0..1] of TShadow;
+  PShadows = ^TShadows;
+  { A distinct type derived from an imported NativeInt alias must retain its
+    source layout across both the PPU boundary and another type copy. }
+  TLocalNative = type TNativeCopy;
+  TLocal = record Value: TLocalNative; Link: Pointer end;
+  TLocals = array[0..1] of TLocal;
+  PLocals = ^TLocals;
+var
+  OldShadow,NewShadow: TShadows;
+  OldLocal,NewLocal: TLocals;
+  function ShadowBase: PShadows;
+  begin Trace:=Trace+'B'; Result:=Current end;
+  function LocalBase: PLocals;
+  begin Trace:=Trace+'B'; Result:=Current end;
+begin
+  Reset(@OldShadow,@NewShadow);
+  Selected:=@ShadowBase()^[ChooseIndex];
+  Check('BI',@OldShadow[0],14);
+  Reset(@OldLocal,@NewLocal);
+  Selected:=@LocalBase()^[ChooseIndex];
+  Check('IB',@NewLocal[0],15);
 end;
 
 begin
@@ -62,4 +109,26 @@ begin
   Reset(@OldMethods,@NewMethods);
   Selected:=@MethodBase()^[ChooseIndex];
   Check('BI',@OldMethods[0],7);
+  { Sets are byte-aligned; a three-byte range uses four bytes. Target set
+    packing must not affect scheduling. NativeInt/NativeUInt are eight bytes
+    in Delphi 2007 even on Win32. Source strides here are 5,5,5,4,16,16. }
+  Reset(@OldSetHead,@NewSetHead);
+  Selected:=@SetHeadBase()^[ChooseIndex];
+  Check('IB',@NewSetHead[0],8);
+  Reset(@OldSetTail,@NewSetTail);
+  Selected:=@SetTailBase()^[ChooseIndex];
+  Check('IB',@NewSetTail[0],9);
+  Reset(@OldSetThree,@NewSetThree);
+  Selected:=@SetThreeBase()^[ChooseIndex];
+  Check('IB',@NewSetThree[0],10);
+  Reset(@OldSetOffset,@NewSetOffset);
+  Selected:=@SetOffsetBase()^[ChooseIndex];
+  Check('BI',@OldSetOffset[0],11);
+  Reset(@OldNativeSigned,@NewNativeSigned);
+  Selected:=@NativeSignedBase()^[ChooseIndex];
+  Check('IB',@NewNativeSigned[0],12);
+  Reset(@OldNativeUnsigned,@NewNativeUnsigned);
+  Selected:=@NativeUnsignedBase()^[ChooseIndex];
+  Check('IB',@NewNativeUnsigned[0],13);
+  CheckLocalTypes;
 end.

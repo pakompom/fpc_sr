@@ -443,14 +443,56 @@ implementation
     procedure delphi32_layout(def:tdef;out size:int64;out alignment:shortint);
       var
         count: qword;
+        sourcedef: tstoreddef;
       begin
         size:=-1;
         alignment:=1;
         case def.typ of
-          orddef,enumdef,setdef:
+          orddef:
+            begin
+              size:=def.size;
+              { System.NativeInt/NativeUInt were eight-byte types in Delphi
+                2007, including Win32. FPC already keeps them distinct from
+                PtrInt/PtrUInt. Follow the existing type-copy ancestry so
+                aliases retain that source classification across PPUs, without
+                changing their target representation or recognizing unrelated
+                user types merely by name. }
+              sourcedef:=tstoreddef(def);
+              while assigned(sourcedef) do
+                begin
+                  if assigned(systemunit) and assigned(sourcedef.typesym) and
+                     (sourcedef.typesym.owner=systemunit) and
+                     ((sourcedef.typesym.name='NATIVEINT') or
+                      (sourcedef.typesym.name='NATIVEUINT')) then
+                    begin
+                      size:=8;
+                      break;
+                    end;
+                  sourcedef:=sourcedef.orgdef;
+                end;
+              alignment:=min(8,size_2_align(size));
+            end;
+          enumdef:
             begin
               size:=def.size;
               alignment:=min(8,size_2_align(size));
+            end;
+          setdef:
+            begin
+              { Delphi sets are byte-aligned. Their size is the byte span of
+                the declared range, except that three bytes become four.
+                FPC's set packing and copies may round up the storage size
+                and lower bound differently. }
+              sourcedef:=tstoreddef(def);
+              while assigned(sourcedef.orgdef) do
+                sourcedef:=sourcedef.orgdef;
+              if (tsetdef(sourcedef).setlow>=0) and
+                 (tsetdef(sourcedef).setmax<=255) and
+                 (tsetdef(sourcedef).setlow<=tsetdef(sourcedef).setmax) then
+                size:=tsetdef(sourcedef).setmax div 8-
+                      tsetdef(sourcedef).setlow div 8+1;
+              if size=3 then
+                size:=4;
             end;
           floatdef:
             begin

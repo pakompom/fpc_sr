@@ -38,6 +38,10 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
   initializers, including nested constants and procedure pointers. Regression
   coverage is part of the standard `tests/tppu` suite.
 
+- `fpwidestring` UTF-8 case conversion excludes the terminating zero from
+  the result length, preserving filenames and other strings passed to
+  null-terminated APIs. Coverage is in `tests/test/units/fpwidestring`.
+
 - `{$LEGACYPC24 ON/OFF}` selects 24-bit LLVM arithmetic and Delphi binary80
   constant semantics while preserving declared storage types. Single/Double
   expressions use hardware operations with corrections at rounding boundaries;

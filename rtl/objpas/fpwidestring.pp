@@ -560,7 +560,8 @@ begin
 
       ulen:=Length(us);
       slen:=UnicodeToUtf8(nil,high(SizeUInt),@us[1],ulen);
-      SetLength(Result,slen);
+      { The conversion count includes the terminating zero, unlike string length. }
+      SetLength(Result,slen-1);
       UnicodeToUtf8(@Result[1],slen,@us[1],ulen);
       exit;
     end;
@@ -626,7 +627,8 @@ begin
 
       ulen:=Length(us);
       slen:=UnicodeToUtf8(nil,high(SizeUInt),@us[1],ulen);
-      SetLength(Result,slen);
+      { The conversion count includes the terminating zero, unlike string length. }
+      SetLength(Result,slen-1);
       UnicodeToUtf8(@Result[1],slen,@us[1],ulen);
       exit;
     end;

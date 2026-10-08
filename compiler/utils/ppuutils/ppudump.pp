@@ -1007,12 +1007,15 @@ begin
       exit;
     end;
   writeln([space,' recordalignment: ',shortint(ppufile.getbyte)]);
+  writeln([space,' explicitrecordalignment: ',shortint(ppufile.getbyte)]);
   usefieldalignment:=shortint(ppufile.getbyte);
   writeln([space,' usefieldalignment: ',usefieldalignment]);
   writeln([space,' recordalignmin: ',shortint(ppufile.getbyte)]);
   if (usefieldalignment=C_alignment) then
     writeln([space,' fieldalignment: ',shortint(ppufile.getbyte)]);
   readmanagementoperatoroptions(space,'Fields have MOPs');
+  writeln([space,' Delphi32 size: ',ppufile.getint64]);
+  writeln([space,' Delphi32 alignment: ',shortint(ppufile.getbyte)]);
 end;
 
 function readsymtableoptions(const s: string) : tsymtableoptions;

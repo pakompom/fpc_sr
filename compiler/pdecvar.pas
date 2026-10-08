@@ -1720,6 +1720,8 @@ implementation
          { maxsize contains the max. size of a variant }
          { startvarrec contains the start of the variant part of a record }
          maxsize, startvarrecsize : asizeint;
+         delphimaxsize,delphistartsize: int64;
+         delphimaxalign,delphistartalign: shortint;
          usedalign,
          maxalignment,startvarrecalign,
          maxpadalign, startpadalign: shortint;
@@ -2022,6 +2024,8 @@ implementation
             try_to_consume(_CASE) then
            begin
               maxsize:=0;
+              delphimaxsize:=0;
+              delphimaxalign:=1;
               maxalignment:=0;
               maxpadalign:=0;
 
@@ -2067,6 +2071,13 @@ implementation
               UnionSymtable:=trecordsymtable.create('',current_settings.packrecords,current_settings.alignment.recordalignmin);
               UnionDef:=crecorddef.create('',unionsymtable);
               uniondef.isunion:=true;
+
+              { Delphi aligns each variant's fields at the current record
+                position, not at the start of a separately aligned union. }
+              delphistartsize:=recst.delphi_datasize;
+              delphistartalign:=recst.delphi_alignment;
+              UnionSymtable.delphi_datasize:=delphistartsize;
+              UnionSymtable.delphi_alignment:=delphistartalign;
 
               startvarrecsize:=UnionSymtable.datasize;
               { align the bitpacking to the next byte }
@@ -2116,10 +2127,17 @@ implementation
 
                 { calculates maximal variant size }
                 maxsize:=max(maxsize,unionsymtable.datasize);
+                if (delphimaxsize<0) or (unionsymtable.delphi_datasize<0) then
+                  delphimaxsize:=-1
+                else
+                  delphimaxsize:=max(delphimaxsize,unionsymtable.delphi_datasize);
+                delphimaxalign:=max(delphimaxalign,unionsymtable.delphi_alignment);
                 maxalignment:=max(maxalignment,unionsymtable.fieldalignment);
                 maxpadalign:=max(maxpadalign,unionsymtable.padalignment);
                 { the items of the next variant are overlayed }
                 unionsymtable.datasize:=startvarrecsize;
+                unionsymtable.delphi_datasize:=delphistartsize;
+                unionsymtable.delphi_alignment:=delphistartalign;
                 unionsymtable.fieldalignment:=startvarrecalign;
                 unionsymtable.padalignment:=startpadalign;
                 if (current_scanner.token<>_END) and (current_scanner.token<>_RKLAMMER) then
@@ -2130,8 +2148,12 @@ implementation
               symtablestack.pop(UnionSymtable);
               { at last set the record size to that of the biggest variant }
               unionsymtable.datasize:=maxsize;
+              unionsymtable.delphi_datasize:=delphimaxsize;
+              unionsymtable.delphi_alignment:=delphimaxalign;
               unionsymtable.fieldalignment:=maxalignment;
               unionsymtable.addalignmentpadding;
+              recst.delphi_datasize:=unionsymtable.delphi_datasize;
+              recst.delphi_alignment:=unionsymtable.delphi_alignment;
 {$if defined(powerpc) or defined(powerpc64)}
               { parent inherits the alignment padding if the variant is the first "field" of the parent record/variant }
               if (target_info.system in [system_powerpc_darwin, system_powerpc_macosclassic, system_powerpc64_darwin]) and

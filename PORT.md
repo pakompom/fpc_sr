@@ -58,6 +58,8 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
   the resulting code. It covers real and integer operands, call arguments,
   ordinary scalar assignments and array indexing. Source scheduling information
   survives lowering, inlining and unit files; the target calling ABI is unchanged.
+  Array scheduling uses the retained Delphi32 record layout, including packed
+  and variant records, independently of the target's pointer size and alignment.
   It is not a complete Delphi 2007 scheduler: argument ties and some shifts still
   depend on temporary x86 register availability, and general saved-inline,
   managed-assignment and exception-only ordering need separate treatment.

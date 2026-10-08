@@ -117,13 +117,19 @@ interface
           fieldalignment,        { alignment current alignment used when fields are inserted }
           padalignment : shortint;   { size to a multiple of which the symtable has to be rounded up }
           recordalignmin: shortint; { local equivalentsof global settings, so that records can be created with custom settings internally }
+          { Delphi32 source layout, independent of target field offsets and
+            field reordering. Retained even when this unit is compiled without
+            DELPHIORDER, since an importing unit may enable it. }
+          delphi_datasize: int64;
+          delphi_alignment: shortint;
           has_fields_with_mop : tmanagementoperators; { whether any of the fields has the need for a management operator (or one of the field's fields) }
+          procedure adddelphifield(size: int64; alignment: shortint);
           constructor create(const n:string;usealign,recordminalign:shortint);
           destructor destroy;override;
           procedure ppuload(ppufile:tcompilerppufile);override;
           procedure ppuwrite(ppufile:tcompilerppufile);override;
           procedure alignrecord(fieldoffset:asizeint;varalign:shortint);
-          procedure addfield(sym:tfieldvarsym;vis:tvisibility);
+          procedure addfield(sym:tfieldvarsym;vis:tvisibility; source_layout:boolean=true);
           procedure addfieldlist(list: tfpobjectlist; maybereorder: boolean);
           { returns the field closest to this offset (may not be exact because
             of padding; internalerrors for variant records, assumes fields are
@@ -1202,6 +1208,8 @@ implementation
       begin
         inherited create(n);
         _datasize:=0;
+        delphi_datasize:=0;
+        delphi_alignment:=1;
         databitsize:=0;
         recordalignment:=1;
         explicitrecordalignment:=0;
@@ -1249,6 +1257,8 @@ implementation
         if (usefieldalignment=C_alignment) then
           fieldalignment:=shortint(ppufile.getbyte);
         ppufile.getset(tppuset1(has_fields_with_mop));
+        delphi_datasize:=ppufile.getint64;
+        delphi_alignment:=shortint(ppufile.getbyte);
         inherited ppuload(ppufile);
       end;
 
@@ -1271,6 +1281,8 @@ implementation
            def requires storing the set in the recorddef at least between
            ppuload and deref/derefimpl }
          ppufile.putset(tppuset1(has_fields_with_mop));
+         ppufile.putint64(delphi_datasize);
+         ppufile.putbyte(byte(delphi_alignment));
          ppufile.writeentry(ibrecsymtableoptions);
 
          inherited ppuwrite(ppufile);
@@ -1320,16 +1332,39 @@ implementation
         recordalignment:=max(recordalignment,varalignrecord);
       end;
 
-    procedure tabstractrecordsymtable.addfield(sym:tfieldvarsym;vis:tvisibility);
+    procedure tabstractrecordsymtable.adddelphifield(size:int64;alignment:shortint);
+      begin
+        { Delphi records use at most eight-byte field alignment. Packing is a
+          source directive; target ABI minimums and maxima do not apply. }
+        if (size<0) or (usefieldalignment<0) then
+          delphi_datasize:=-1;
+        if delphi_datasize<0 then
+          exit;
+        alignment:=min(alignment,8);
+        if usefieldalignment>0 then
+          alignment:=min(alignment,usefieldalignment);
+        delphi_alignment:=max(delphi_alignment,alignment);
+        delphi_datasize:=align(delphi_datasize,alignment)+size;
+      end;
+
+
+    procedure tabstractrecordsymtable.addfield(sym:tfieldvarsym;vis:tvisibility;source_layout:boolean);
       var
         l      : asizeint;
         varalign : shortint;
         vardef : tdef;
+        sourcesize: int64;
+        sourcealign: shortint;
       begin
         if (sym.owner<>self) then
           internalerror(200602031);
         if sym.fieldoffset<>-1 then
           internalerror(200602032);
+        if source_layout then
+          begin
+            delphi32_layout(sym.vardef,sourcesize,sourcealign);
+            adddelphifield(sourcesize,sourcealign);
+          end;
         { set visibility for the symbol }
         sym.visibility:=vis;
         { this symbol can't be loaded to a register }
@@ -1426,7 +1461,19 @@ implementation
         prevglobalfieldalignment,
         newfieldalignment: shortint;
         changed: boolean;
+        sourcesize: int64;
+        sourcealign: shortint;
       begin
+        { Capture declaration order before target-specific field reordering. }
+        for i:=0 to list.count-1 do
+          begin
+            fieldvs:=tfieldvarsym(list[i]);
+            if not(sp_static in fieldvs.symoptions) then
+              begin
+                delphi32_layout(fieldvs.vardef,sourcesize,sourcealign);
+                adddelphifield(sourcesize,sourcealign);
+              end;
+          end;
         if maybereorder and
            (cs_opt_reorder_fields in current_settings.optimizerswitches) and
            (list.count>1) then
@@ -1551,7 +1598,7 @@ implementation
                 { read_record_fields already set the visibility of the fields,
                   because a single list can contain symbols with different
                   visibility }
-                addfield(fieldvs,fieldvs.visibility);
+                addfield(fieldvs,fieldvs.visibility,false);
               end;
           end;
       end;
@@ -1584,6 +1631,8 @@ implementation
       var
         padded_datasize: asizeint;
       begin
+        if delphi_datasize>=0 then
+          delphi_datasize:=align(delphi_datasize,delphi_alignment);
         { make the record size aligned correctly so it can be
           used as elements in an array. For C records we
           use the fieldalignment, because that is updated with the

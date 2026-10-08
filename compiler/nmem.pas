@@ -1119,6 +1119,7 @@ implementation
          minvalue, maxvalue: Tconstexprint;
          source_index_demand: word;
          source_index_calllike: boolean;
+         source_element_size: int64;
       begin
          result:=nil;
          typecheckpass(left);
@@ -1167,9 +1168,16 @@ implementation
                leave an integer multiply in the index.
                Its constant operand adds one integer pressure slot. }
              if (left.resultdef.typ=arraydef) and
-                not is_constnode(right) and
-                not(tarraydef(left.resultdef).elesize in [1,2,4,8]) then
-               source_index_demand:=source_index_demand or $40;
+                not is_constnode(right) then
+               begin
+                 source_element_size:=delphi32_size(tarraydef(left.resultdef).elementdef);
+                 { Keep the existing rule for types whose source layout is
+                   not represented (e.g. bitpacked records and C layouts). }
+                 if source_element_size<0 then
+                   source_element_size:=tarraydef(left.resultdef).elesize;
+                 if not(source_element_size in [1,2,4,8]) then
+                   source_index_demand:=source_index_demand or $40;
+               end;
              { Delphi 2007 range-check demand uses the declared range type,
                not the target index width.
                A byte-sized range check can change which operand wins a tie. }

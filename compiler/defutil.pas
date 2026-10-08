@@ -42,6 +42,12 @@ interface
     {# Returns true, if definition defines an ordinal type }
     function is_ordinal(def : tdef) : boolean;
 
+    { Storage layout in the Delphi 2007 Win32 source model. This is metadata
+      for operand scheduling only, never an ABI/layout override. A negative
+      size denotes a type not covered by the retained source layout. }
+    procedure delphi32_layout(def: tdef; out size: int64; out alignment: shortint);
+    function delphi32_size(def: tdef): int64;
+
     {# Returns true, if definition defines a string type }
     function is_string(def : tdef): boolean;
 
@@ -433,6 +439,74 @@ implementation
        symtable, // search_system_type
        symsym,
        cpuinfo;
+
+    procedure delphi32_layout(def:tdef;out size:int64;out alignment:shortint);
+      var
+        count: qword;
+      begin
+        size:=-1;
+        alignment:=1;
+        case def.typ of
+          orddef,enumdef,setdef:
+            begin
+              size:=def.size;
+              alignment:=min(8,size_2_align(size));
+            end;
+          floatdef:
+            begin
+              if (df_source_extended in def.defoptions) or
+                 (tfloatdef(def).floattype in [s80real,sc80real]) then
+                size:=10
+              else
+                size:=def.size;
+              if size=4 then alignment:=4 else alignment:=8;
+            end;
+          pointerdef,classrefdef:
+            begin size:=4; alignment:=4; end;
+          procvardef:
+            begin
+              if tabstractprocdef(def).is_addressonly then size:=4 else size:=8;
+              alignment:=4;
+            end;
+          stringdef:
+            if tstringdef(def).stringtype=st_shortstring then
+              size:=def.size
+            else
+              begin size:=4; alignment:=4; end;
+          variantdef:
+            begin size:=16; alignment:=8; end;
+          objectdef:
+            if not is_object(def) then
+              begin size:=4; alignment:=4; end;
+          recorddef:
+            begin
+              size:=tabstractrecordsymtable(trecorddef(def).symtable).delphi_datasize;
+              alignment:=tabstractrecordsymtable(trecorddef(def).symtable).delphi_alignment;
+            end;
+          arraydef:
+            if is_dynamic_array(def) then
+              begin size:=4; alignment:=4; end
+            else if is_normal_array(def) and not is_packed_array(def) then
+              begin
+                delphi32_layout(tarraydef(def).elementdef,size,alignment);
+                count:=tarraydef(def).elecount;
+                if (size>0) and (count<=qword(high(int64)) div qword(size)) then
+                  size:=size*int64(count)
+                else if size<>0 then
+                  size:=-1;
+              end;
+          else
+            ;
+        end;
+      end;
+
+
+    function delphi32_size(def:tdef):int64;
+      var
+        alignment: shortint;
+      begin
+        delphi32_layout(def,result,alignment);
+      end;
 
     { returns true, if def uses FPU }
     function is_fpu(def : tdef) : boolean;

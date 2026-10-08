@@ -1,7 +1,6 @@
-{ %CPU=aarch64,x86_64 }
+{ %CPU=aarch64,arm,x86_64,i386,wasm32 }
 { %OPT=-O4 -OoNOFASTMATH }
 
-{$ifdef CPULLVM}
 program tpc24sqr;
 {$ifdef PC24_TEST_DELPHI}
 {$mode delphi}{$EXCESSPRECISION ON}
@@ -52,8 +51,3 @@ begin
   Target.Free;
   Source.Free;
 end.
-{$else}
-program tpc24sqr;
-begin
-end.
-{$endif}

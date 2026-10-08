@@ -32,10 +32,14 @@ asm
   fmadd d0,d0,d1,d2
 end;
 {$else CPUAARCH64}
+{$if defined(CPUWASM32) or not defined(UNIX)}
+{$I pc24fma.inc}
+{$else}
 { The native bootstrap compiler may not support an FMA intrinsic for its
   selected CPU. libc fma provides the required single rounding nevertheless. }
 function pc24_fma(a,b,c: Double): Double; cdecl;
   external {$ifdef DARWIN}'c'{$else}'m'{$endif} name 'fma';
+{$endif}
 {$endif CPUAARCH64}
 {$endif CPULLVM}
 
@@ -365,10 +369,10 @@ begin
   fpc_pc24_exp:=fpc_pc24_exp_reduced_impl(fpc_pc24_mul_tail_impl(a,Log2EHi,Log2ELo));
 end;
 
-{$if defined(CPUX86_64) and defined(SUPPORT_EXTENDED)}
+{$if (defined(CPUX86_64) or defined(CPUI386)) and defined(SUPPORT_EXTENDED)}
 { Native binary80 operands cannot be narrowed to Double before an operation.
-  Keep the complete operation inside one assembler routine so LLVM cannot
-  move arithmetic across the precision-control changes. These cold paths
+  Keep the complete operation inside one assembler routine so the compiler
+  cannot move arithmetic across the precision-control changes. These routines
   preserve the caller's rounding mode and restore its original control word. }
 {$asmmode att}
 function fpc_pc24_add_extended(a,b: Extended): Extended; compilerproc; assembler;

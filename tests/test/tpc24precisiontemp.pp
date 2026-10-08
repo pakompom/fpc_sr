@@ -1,6 +1,5 @@
-{ %CPU=aarch64,x86_64 }
+{ %CPU=aarch64,arm,x86_64,i386,wasm32 }
 { %OPT=-O4 -OoNOFASTMATH }
-{$ifdef CPULLVM}
 program tpc24precisiontemp;
 
 {$mode objfpc}
@@ -202,9 +201,3 @@ begin
 {$endif}
   WriteLn('ok');
 end.
-{$else}
-program tpc24precisiontemp;
-begin
-  WriteLn('ok');
-end.
-{$endif}

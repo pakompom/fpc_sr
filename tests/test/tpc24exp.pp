@@ -1,6 +1,5 @@
-{ %CPU=aarch64,x86_64,i386,wasm32 }
+{ %CPU=aarch64,arm,x86_64,i386,wasm32 }
 { %OPT=-O4 -OoNOFASTMATH }
-{$ifdef CPULLVM}
 program tpc24exp;
 {$mode objfpc}
 {$inline off}
@@ -102,8 +101,3 @@ begin
   if Abs(Ordinary(1)-2.7182818284590452354)>1e-15 then Halt(27);
   Check(Evaluate(710), $7FF0000000000000, 28);
 end.
-{$else}
-program tpc24exp;
-begin
-end.
-{$endif}

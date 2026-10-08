@@ -1,5 +1,5 @@
 { Compiler support for per-operation rounding to 24 significant bits. }
-{$if (defined(CPULLVM) or defined(CPUAARCH64) or defined(UNIX)) and defined(SUPPORT_SINGLE) and defined(SUPPORT_DOUBLE)}
+{$if (defined(CPULLVM) or defined(CPUAARCH64) or defined(CPUARM) or defined(CPUX86_64) or defined(CPUI386) or defined(CPUWASM32) or defined(UNIX)) and defined(SUPPORT_SINGLE) and defined(SUPPORT_DOUBLE)}
 {$define FPC_HAS_PC24_HELPERS}
 function fpc_pc24_add(a,b: Double): Single; compilerproc; inline;
 function fpc_pc24_sub(a,b: Double): Single; compilerproc; inline;
@@ -17,7 +17,7 @@ function fpc_pc24_mul_tail(a,b,tail: Double): Single; compilerproc; inline;
 function fpc_pc24_div_tail(a,b,tail: Double): Single; compilerproc; inline;
 function fpc_pc24_rdiv_tail(a,b,tail: Double): Single; compilerproc; inline;
 function fpc_pc24_unrepresentable_equal(a: Double): Boolean; compilerproc; inline;
-{$if defined(CPUX86_64) and defined(SUPPORT_EXTENDED)}
+{$if (defined(CPUX86_64) or defined(CPUI386)) and defined(SUPPORT_EXTENDED)}
 function fpc_pc24_add_extended(a,b: Extended): Extended; compilerproc;
 function fpc_pc24_sub_extended(a,b: Extended): Extended; compilerproc;
 function fpc_pc24_mul_extended(a,b: Extended): Extended; compilerproc;

@@ -1,6 +1,5 @@
-{ %CPU=x86_64 }
+{ %CPU=x86_64,i386 }
 { %OPT=-O2 -OoNOFASTMATH }
-{$ifdef CPULLVM}
 program tpc24extended;
 
 {$mode objfpc}
@@ -108,9 +107,3 @@ begin
 {$endif}
   WriteLn('ok');
 end.
-{$else}
-program tpc24extended;
-begin
-  WriteLn('ok');
-end.
-{$endif}

@@ -1,6 +1,5 @@
-{ %CPU=aarch64,x86_64 }
+{ %CPU=aarch64,arm,x86_64,i386,wasm32 }
 { %OPT=-O4 -OoNOFASTMATH }
-{$ifdef CPULLVM}
 program tpc24;
 {$ifdef PC24_TEST_DELPHI}
 {$mode delphi}{$EXCESSPRECISION ON}
@@ -42,7 +41,9 @@ begin
   a:=FromBits($3ff0000010000000); { 1 + 2^-24 }
   b:=FromBits($3c90000000000000); { 2^-54 }
   Check(PCAdd(a,b)=FromBits($3ff0000020000000),1);
-  Check(NativeAdd(a,b)=a,2);
+  { Ordinary x87 expressions may retain excess precision until stored. }
+  d:=NativeAdd(a,b);
+  Check(d=a,2);
   s:=16777216;
   Check(PCSingleAdd(s,1)=16777216,3);
   i:=16777217;
@@ -69,9 +70,3 @@ begin
   {$pop}
   WriteLn('ok');
 end.
-{$else}
-program tpc24;
-begin
-  WriteLn('ok');
-end.
-{$endif}

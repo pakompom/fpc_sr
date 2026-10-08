@@ -140,6 +140,7 @@ interface
 
     function pc24_is_single_operand(p: tnode): boolean;
     function pc24_needs_extended(p: tnode): boolean;
+    function pc24_uses_x87: boolean;
     procedure pc24_narrow_single(var p: tnode);
 
     var
@@ -240,6 +241,20 @@ const
       end;
 
 
+    function pc24_uses_x87: boolean;
+      begin
+        { Native i386's default RTL evaluates Double expressions on x87,
+          including residual helpers inlined into SSE2 callers. Keep each
+          PC24 operation atomic in the x87 helper rather than depending on
+          the caller's FPU choice or on implicit register spilling. }
+{$ifdef llvm}
+        result:=false;
+{$else llvm}
+        result:=target_info.cpu=systems.cpu_i386;
+{$endif llvm}
+      end;
+
+
     function pc24_needs_extended(p: tnode): boolean;
       var
         hi,lo: double;
@@ -279,10 +294,9 @@ const
 
 
     function delphi_capture_first(var left,right: tnode; firstleft,preserve_pc24: boolean;
-      out statements: tstatementnode): tnode;
+      out statements: tstatementnode; out temp: ttempcreatenode): tnode;
       var
         first: pnode;
-        temp: ttempcreatenode;
         sourcedef,tempdef: tdef;
       begin
         result:=nil;
@@ -305,8 +319,6 @@ const
         first^:=ctemprefnode.create(temp);
         if tempdef<>sourcedef then
           first^:=ctypeconvnode.create_internal(first^,sourcedef);
-        { The final expression consumes the captured normal temporary. }
-        addstatement(statements,ctempdeletenode.create_normal_temp(temp));
       end;
 
 
@@ -317,6 +329,9 @@ const
         sequence: tnode;
         statements: tstatementnode;
         op: taddnode;
+        captured,resulttemp: ttempcreatenode;
+        value: tnode;
+        tempdef: tdef;
       begin
         result:=nil;
         if not(cs_delphi_order in localswitches) or
@@ -351,7 +366,7 @@ const
         source_demand:=delphi_source_demand(self);
         source_extended:=delphi_source_extended(self);
         sequence:=delphi_capture_first(left,right,firstleft,
-          cs_legacy_pc24 in localswitches,statements);
+          cs_legacy_pc24 in localswitches,statements,captured);
         if not assigned(sequence) then exit;
         op:=caddnode.create(nodetype,left,right);
         op.localswitches:=localswitches;
@@ -361,7 +376,29 @@ const
         delphi_set_source_order(op,source_demand,source_extended);
         left:=nil;
         right:=nil;
-        addstatement(statements,op);
+        { The operation may become an inline helper that reads its argument
+          more than once. Keep the captured operand persistent until the
+          entire operation has finished, then return its result as a normal
+          temporary. Releasing the operand before the operation is unsafe
+          for native register temporaries, which allow only one final read. }
+        value:=op;
+        typecheckpass(value);
+        tempdef:=value.resultdef;
+        { Preserve the lowered operation's known precision just as for the
+          captured operand; a widened Single must not become an arbitrary
+          Double input to the next operation. }
+        if (cs_legacy_pc24 in localswitches) and is_fpu(tempdef) and
+           pc24_is_single_operand(value) then
+          tempdef:=s32floattype;
+        resulttemp:=ctempcreatenode.create(tempdef,tempdef.size,tt_persistent,true);
+        addstatement(statements,resulttemp);
+        addstatement(statements,cassignmentnode.create_internal(ctemprefnode.create(resulttemp),value));
+        addstatement(statements,ctempdeletenode.create(captured));
+        addstatement(statements,ctempdeletenode.create_normal_temp(resulttemp));
+        value:=ctemprefnode.create(resulttemp);
+        if tempdef<>resultdef then
+          value:=ctypeconvnode.create_internal(value,resultdef);
+        addstatement(statements,value);
         sequence.localswitches:=localswitches;
         delphi_set_source_order(sequence,source_demand,source_extended);
         result:=sequence;
@@ -414,7 +451,7 @@ const
         if arg.resultdef.size>8 then
           begin
             { Native binary80 comparison already uses the exact literal. }
-            if (target_info.cpu=systems.cpu_x86_64) and is_extended(arg.resultdef) then
+            if (target_info.cpu in [systems.cpu_i386,systems.cpu_x86_64]) and is_extended(arg.resultdef) then
               exit;
             Comment(V_Error,'LEGACYPC24 comparison operand format is not supported');
             exit(cerrornode.create);
@@ -493,9 +530,9 @@ const
               end;
           end;
         source_demand:=delphi_source_demand(self);
-        if pc24_needs_extended(left) or pc24_needs_extended(right) then
+        if pc24_uses_x87 or pc24_needs_extended(left) or pc24_needs_extended(right) then
           begin
-            if target_info.cpu<>systems.cpu_x86_64 then
+            if not(target_info.cpu in [systems.cpu_i386,systems.cpu_x86_64]) then
               begin
                 Comment(V_Error,'LEGACYPC24 native Extended arithmetic is not supported on this target');
                 exit(cerrornode.create);
@@ -2900,9 +2937,9 @@ const
                  end;
                pc24_staticdef:=getbestreal(left.resultdef,right.resultdef);
                resultrealdef:=s64floattype;
-               if pc24_needs_extended(left) or pc24_needs_extended(right) then
+               if pc24_uses_x87 or pc24_needs_extended(left) or pc24_needs_extended(right) then
                  begin
-                   if target_info.cpu<>systems.cpu_x86_64 then
+                   if not(target_info.cpu in [systems.cpu_i386,systems.cpu_x86_64]) then
                      begin
                        Comment(V_Error,'LEGACYPC24 native Extended arithmetic is not supported on this target');
                        exit(cerrornode.create);

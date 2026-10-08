@@ -1,8 +1,7 @@
-{ %CPU=x86_64 }
+{ %CPU=x86_64,i386 }
 { %OPT=-O4 -OoNOFASTMATH }
 { Binary80 materialization must not pass through a host Double. }
 
-{$ifdef CPULLVM}
 program tpc24const80;
 
 {$mode objfpc}
@@ -43,11 +42,6 @@ begin
   Check(Value, QWord($8000000000000001), $3fff, 4);
 end.
 {$else}
-begin
-end.
-{$endif}
-{$else}
-program tpc24const80;
 begin
 end.
 {$endif}

@@ -4496,9 +4496,9 @@ implementation
               temp_pnode:=@tcallparanode(left).left
             else
               temp_pnode:=@left;
-            if pc24_needs_extended(temp_pnode^) then
+            if pc24_uses_x87 or pc24_needs_extended(temp_pnode^) then
               begin
-                if target_info.cpu<>systems.cpu_x86_64 then
+                if not(target_info.cpu in [systems.cpu_i386,systems.cpu_x86_64]) then
                   begin
                     Comment(V_Error,'LEGACYPC24 native Extended Frac is not supported on this target');
                     exit(cerrornode.create);
@@ -4553,9 +4553,9 @@ implementation
                 trealconstnode(result).pc24_value:=pc24folded;
                 exit;
               end;
-            if pc24_needs_extended(temp_pnode^) then
+            if pc24_uses_x87 or pc24_needs_extended(temp_pnode^) then
               begin
-                if target_info.cpu<>systems.cpu_x86_64 then
+                if not(target_info.cpu in [systems.cpu_i386,systems.cpu_x86_64]) then
                   begin
                     Comment(V_Error,'LEGACYPC24 native Extended Sqr/Sqrt is not supported on this target');
                     exit(cerrornode.create);

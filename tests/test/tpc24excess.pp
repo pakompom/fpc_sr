@@ -1,6 +1,5 @@
-{ %CPU=aarch64,x86_64 }
+{ %CPU=aarch64,arm,x86_64,i386,wasm32 }
 { %OPT=-O4 -OoNOFASTMATH }
-{$ifdef CPULLVM}
 program tpc24excess;
 {$mode delphi}{$EXCESSPRECISION ON}{$LEGACYPC24 ON}
 function Chain(a,b,c:Single):Single;
@@ -15,9 +14,3 @@ begin
   if Bound(-32768.9987)<>-32768996 then Halt(3);
   WriteLn('ok');
 end.
-{$else}
-program tpc24excess;
-begin
-  WriteLn('ok');
-end.
-{$endif}

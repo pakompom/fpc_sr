@@ -431,11 +431,27 @@ unit scandir;
 
 
     procedure dir_legacy_pc24;
+      var
+        state: char;
       begin
-        do_localswitch(cs_legacy_pc24);
+        { Local switches are applied when the parser consumes the next token.
+          Validate the requested state, rather than the previous setting. }
+        state:=current_scanner.readstate;
+        if state in ['-','+'] then
+          recordpendinglocalswitch(cs_legacy_pc24,state);
 {$ifndef llvm}
-        if cs_legacy_pc24 in current_settings.localswitches then
-          Message1(scan_e_unsupported_switch,'LEGACYPC24 requires an LLVM target');
+        if (state='+') and
+           not(target_info.cpu in [systems.cpu_aarch64,systems.cpu_arm,
+             systems.cpu_x86_64,systems.cpu_i386,systems.cpu_wasm32]) then
+          Message1(scan_e_unsupported_switch,'LEGACYPC24 is not supported on this target');
+{$ifdef arm}
+        { The PC24 helpers require binary64 intermediate operations and exact
+          narrowing to binary32. Older FPA and single-only VFP configurations
+          have not been validated for these requirements. }
+        if (state='+') and
+           not(FPUARM_HAS_VFP_DOUBLE in fpu_capabilities[current_settings.fputype]) then
+          Message1(scan_e_unsupported_switch,'LEGACYPC24 requires double-precision VFP on ARM');
+{$endif arm}
 {$endif llvm}
       end;
 

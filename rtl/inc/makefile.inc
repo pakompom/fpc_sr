@@ -7,7 +7,7 @@
 SYSNAMES=systemh heaph mathh filerec textrec system flt_conv flt_core flt_pack sstrings innr \
          file typefile text rtti heap astrings objpas objpash except int64 \
          generic dynarr varianth variant wstrings compproc \
-         genmath genmathh cgenmath pc24 pc24h
+         genmath genmathh cgenmath pc24 pc24h pc24fma
 
 SYSINCNAMES=$(addsuffix .inc,$(SYSNAMES))
 

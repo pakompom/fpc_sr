@@ -11,14 +11,14 @@ function PCSingleAdd(a,b: Single): Single; inline;
 function PCIntAdd(a: Single; b: LongInt): Double; inline;
 function NativeAdd(a,b: Double): Double; inline;
 implementation
-{$ifdef CPULLVM}{$LEGACYPC24 ON}{$endif}
+{$LEGACYPC24 ON}
 function PCAdd(a,b: Double): Double; inline;
 begin Result:=a+b; end;
 function PCSingleAdd(a,b: Single): Single; inline;
 begin Result:=a+b; end;
 function PCIntAdd(a: Single; b: LongInt): Double; inline;
 begin Result:=a+b; end;
-{$ifdef CPULLVM}{$LEGACYPC24 OFF}{$endif}
+{$LEGACYPC24 OFF}
 function NativeAdd(a,b: Double): Double; inline;
 begin Result:=a+b; end;
 end.

@@ -356,32 +356,39 @@ implementation
         operand: tnode;
         last: tstatementnode;
       begin
+        result:=false;
+        if not(is_single(destination) or is_double(destination)) then
+          exit;
         { Ordering blocks return their final expression. Remove only the same
           generated widening we would remove outside a block, keeping every
           prefix statement and explicit source conversion. }
-        if is_single(destination) and (p.nodetype=blockn) then
+        if p.nodetype=blockn then
           begin
             last:=laststatement(tblocknode(p));
             result:=assigned(last) and assigned(last.left) and
               remove_pc24_widening(last.left,destination);
             if result then
-              p.resultdef:=destination;
+              p.resultdef:=last.left.resultdef;
             exit;
           end;
         { PC24 keeps the source expression type using an internal widening
           wrapper. A Single consumer can use its already-rounded operand
-          directly, even when the consumer performs conversion implicitly.
+          directly; a Double consumer needs only a direct Single widening,
+          not an intermediate Extended conversion. Keep the Single rounding.
           The wrapper carries its defining scope through inline PPUs. }
-        result:=is_single(destination) and
-          (p.nodetype=typeconvn) and (nf_internal in p.flags) and
+        result:=(p.nodetype=typeconvn) and (nf_internal in p.flags) and
           (cs_legacy_pc24 in p.localswitches) and
           (p.resultdef.typ=floatdef) and
           (tfloatdef(p.resultdef).floattype in [s64real,s80real,sc80real,s128real]) and
+          (is_single(destination) or (p.resultdef.size>destination.size)) and
           (ttypeconvnode(p).left.nodetype<>realconstn) and
           is_single(ttypeconvnode(p).left.resultdef);
         if result then
           begin
             operand:=ttypeconvnode(p).left;
+            if cs_delphi_order in p.localswitches then
+              delphi_set_source_order(operand,delphi_source_demand(p),
+                delphi_source_extended(p),delphi_prefix_capturable(p));
             ttypeconvnode(p).left:=nil;
             p.free;
             p:=operand;
@@ -3671,7 +3678,7 @@ implementation
 {$endif not CPUNO32BITOPS}
       begin
         result := nil;
-        if remove_pc24_widening(left,resultdef) then
+        if remove_pc24_widening(left,resultdef) and is_single(resultdef) then
           begin
             result:=left;
             left:=nil;

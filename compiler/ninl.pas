@@ -2432,6 +2432,10 @@ implementation
          result:=nil;
          if inf_pc24_lowered in inlinenodeflags then
            exit;
+         { Delphi evaluates Exp calls at runtime, including literal arguments.
+           Host constant folding would bypass the RTL's PC24 rounding stages. }
+         if (cs_legacy_pc24 in localswitches) and (inlinenumber=in_exp_real) then
+           exit;
          if (cs_legacy_pc24 in localswitches) and assigned(left) and
             (left.nodetype=realconstn) then
            begin
@@ -3439,7 +3443,8 @@ implementation
          temp_pnode: pnode;
          convdef   : tdef;
          pc24proc  : string;
-         pc24folded: tpc24real;
+         pc24folded,pc24log2e: tpc24real;
+         pc24order: longint;
          source_demand: word;
       begin
         result:=nil;
@@ -4413,6 +4418,70 @@ implementation
             end;
           end;
 
+        if not assigned(result) and not codegenerror and
+           (cs_legacy_pc24 in localswitches) and
+           (inlinenumber=in_exp_real) then
+          begin
+            source_demand:=delphi_source_demand(self);
+            if left.nodetype=callparan then
+              temp_pnode:=@tcallparanode(left).left
+            else
+              temp_pnode:=@left;
+            if is_extended(resultdef) and
+               (target_info.cpu in [systems.cpu_i386,systems.cpu_x86_64]) then
+              begin
+                inserttypeconv(temp_pnode^,s80floattype);
+                hp:=ccallnode.createintern('fpc_pc24_exp_extended',
+                  ccallparanode.create(temp_pnode^,nil));
+              end
+            else
+              begin
+                pc24log2e:=pc24_from_uint(0);
+                pc24log2e.significand:=QWord($b8aa3b295c17f0bc);
+                pc24log2e.exponent:=-63;
+                { Preserve binary80 literal tails when reducing the argument.
+                  Only the multiply is folded; Exp itself remains a call. }
+                if (temp_pnode^.nodetype=realconstn) and
+                   pc24_fold('*',trealconstnode(temp_pnode^).pc24_value,
+                     pc24log2e,24,pc24folded) then
+                  begin
+                    if not pc24_exact_double(pc24folded) then
+                      begin
+                        { A finite binary80 argument must not turn into an
+                          infinity before Exp. Clamp only reductions already
+                          outside Double's useful result range. Tiny arguments
+                          round Exp to one; huge ones still overflow/underflow
+                          at runtime in the reduced helper. }
+                        pc24log2e:=pc24folded;
+                        pc24log2e.negative:=false;
+                        if pc24_compare(pc24log2e,pc24_from_uint(2048),pc24order) and
+                           (pc24order>0) then
+                          begin
+                            if pc24folded.negative then
+                              pc24folded:=pc24_from_int(-2048)
+                            else
+                              pc24folded:=pc24_from_int(2048);
+                          end
+                        else
+                          pc24folded:=pc24_from_uint(0);
+                      end;
+                    temp_pnode^.free;
+                    temp_pnode^:=crealconstnode.create(pc24_to_double(pc24folded),s64floattype);
+                    trealconstnode(temp_pnode^).pc24_value:=pc24folded;
+                    pc24proc:='fpc_pc24_exp_reduced';
+                  end
+                else
+                  begin
+                    inserttypeconv(temp_pnode^,s64floattype);
+                    pc24proc:='fpc_pc24_exp';
+                  end;
+                hp:=ccallnode.createintern(pc24proc,ccallparanode.create(temp_pnode^,nil));
+              end;
+            temp_pnode^:=nil;
+            result:=ctypeconvnode.create_internal(hp,resultdef);
+            result.localswitches:=localswitches;
+            delphi_set_source_order(result,source_demand,true,true);
+          end;
         if not assigned(result) and not codegenerror and
            (cs_legacy_pc24 in localswitches) and
            not(inf_pc24_lowered in inlinenodeflags) and

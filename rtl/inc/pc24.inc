@@ -300,6 +300,71 @@ begin
     Keep the actual argument evaluation, including its side effects. }
   fpc_pc24_unrepresentable_equal:=False;
 end;
+
+function fpc_pc24_exp_reduced_impl(a: Double): Double;
+const
+  Ln2: Double = 0.693147180559945309417232121;
+var
+  u: TPC24DoubleBits;
+  k: LongInt;
+  fraction: Single;
+begin
+  { a is the PC24 product with the original binary80 log2(e) constant.
+    Delphi 2007 uses FRNDINT, FSUB, F2XM1, FADD and FSCALE after that
+    multiply. The add rounds the significand to 24 bits; scaling must
+    retain the result type's exponent range rather than store a Single. }
+  u.value:=a;
+  if (u.bits and QWord($7ff0000000000000))=QWord($7ff0000000000000) then
+    begin
+      { The original subtraction of the integral part produces an invalid
+        result for either infinity, rather than exp(+Inf)=+Inf. }
+      if (u.bits and QWord($000fffffffffffff))=0 then
+        begin
+          u.value:=a-a;
+          u.bits:=u.bits or QWord($8000000000000000);
+          exit(u.value);
+        end;
+      exit(a+a);
+    end;
+  if a>1024 then
+    exit(ldexp(1.0,2048));
+  if a< -1076 then
+    exit(ldexp(1.0,-2048));
+  k:=Round(a);
+  { The reduced argument is at most one half. Ordinary Exp here only
+    implements F2XM1 + 1 before the explicit PC24 rounding; it does not
+    repeat the original, PC24-rounded argument reduction. }
+  fraction:=Exp((a-k)*Ln2);
+  fpc_pc24_exp_reduced_impl:=ldexp(Double(fraction),k);
+end;
+
+function fpc_pc24_exp_reduced(a: Double): Double; compilerproc;
+begin
+  fpc_pc24_exp_reduced:=fpc_pc24_exp_reduced_impl(a);
+end;
+
+function fpc_pc24_exp(a: Double): Double; compilerproc;
+const
+  { Together these are exactly the x87 FLDL2E binary80 constant:
+    significand $b8aa3b295c17f0bc, exponent zero. Keep its low bits when
+    the product lies at a binary32 midpoint. }
+  Log2EHi: Double = 1.4426950408889634;
+  Log2ELo: Double = 2.0383000842727483e-17;
+var
+  u: TPC24DoubleBits;
+begin
+  u.value:=a;
+  if (u.bits and QWord($7ff0000000000000))=QWord($7ff0000000000000) then
+    exit(fpc_pc24_exp_reduced_impl(a));
+  { Avoid narrowing a huge finite argument to Single before reducing it.
+    Its sign already determines the stored Double overflow/underflow. }
+  if a>1024 then
+    exit(ldexp(1.0,2048));
+  if a< -1024 then
+    exit(ldexp(1.0,-2048));
+  fpc_pc24_exp:=fpc_pc24_exp_reduced_impl(fpc_pc24_mul_tail_impl(a,Log2EHi,Log2ELo));
+end;
+
 {$if defined(CPUX86_64) and defined(SUPPORT_EXTENDED)}
 { Native binary80 operands cannot be narrowed to Double before an operation.
   Keep the complete operation inside one assembler routine so LLVM cannot
@@ -417,6 +482,33 @@ asm
   frndint
   fldcw pc24cw
   fsubrp %st,%st(1)
+  fwait
+  fldcw oldcw
+end;
+{$endif}
+{$if (defined(CPUX86_64) or defined(CPUI386)) and defined(SUPPORT_EXTENDED)}
+{$asmmode att}
+function fpc_pc24_exp_extended(a: Extended): Extended; compilerproc; assembler;
+var
+  oldcw, pc24cw: Word;
+asm
+  fnstcw oldcw
+  movw oldcw,%ax
+  andw $0xfcff,%ax
+  movw %ax,pc24cw
+  fldcw pc24cw
+  fldt a
+  fldl2e
+  fmulp %st,%st(1)
+  fld %st
+  frndint
+  fxch %st(1)
+  fsub %st(1),%st
+  f2xm1
+  fld1
+  faddp %st,%st(1)
+  fscale
+  fstp %st(1)
   fwait
   fldcw oldcw
 end;

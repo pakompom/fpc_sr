@@ -66,6 +66,11 @@ begin
   Result := Frac(a);
 end;
 
+function Exponential(a: Extended): Extended;
+begin
+  Result := Exp(a);
+end;
+
 function TailComparison(a: Extended): Boolean;
 begin
   Result := a < 1.0000000000000000001;
@@ -96,6 +101,10 @@ begin
   Wide := FromBits($8000000000000000, $43ff);
   Check(Multiply(Wide, 2) = FromBits($8000000000000000, $4400), 10);
   Check(Get8087CW = ControlWord, 11);
+  Check(Exponential(1) = FromBits($adf8540000000000, $4000), 12);
+  Check(Exponential(10000) = FromBits($f7502d0000000000, $7859), 13);
+  Check(Exponential(-10000) = FromBits($847ef80000000000, $07a4), 14);
+  Check(Get8087CW = ControlWord, 15);
 {$endif}
   WriteLn('ok');
 end.

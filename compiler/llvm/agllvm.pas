@@ -1142,6 +1142,21 @@ implementation
           end;
 {$endif wasm32}
         begin
+{$ifdef x86_64}
+          { Bitcode assembled from IR does not inherit Clang's command-line
+            ISA selection. Record it on definitions so LTO retains the same
+            instruction set as the per-unit compilation. }
+          if is_definition then
+            case current_settings.fputype of
+              fpu_x86_64_v1:
+                writer.AsmWrite(' "target-cpu"="x86-64"');
+              fpu_x86_64_v2,fpu_x86_64_v3,fpu_x86_64_v4:
+                writer.AsmWrite(' "target-cpu"="'+fputypestrllvm[current_settings.fputype]+'"');
+              else
+                if fputypestrllvm[current_settings.fputype]<>'' then
+                  writer.AsmWrite(' "target-features"="+'+fputypestrllvm[current_settings.fputype]+'"');
+            end;
+{$endif x86_64}
 {$ifdef aarch64}
           { clang's -march option controls code generation, but does not
             preserve the architecture in bitcode assembled from LLVM IR.
@@ -1922,8 +1937,20 @@ implementation
         else
           optstr:=optstr+' -mdynamic-no-pic';
 
-        if fputypestrllvm[current_settings.fputype]<>'' then
-          optstr:=optstr+' -m'+fputypestrllvm[current_settings.fputype];
+{$ifdef x86_64}
+        { Architecture levels are -march values, not individual -m features. }
+        case current_settings.fputype of
+          fpu_x86_64_v1:
+            optstr:=optstr+' -march=x86-64';
+          fpu_x86_64_v2,fpu_x86_64_v3,fpu_x86_64_v4:
+            optstr:=optstr+' -march='+fputypestrllvm[current_settings.fputype];
+          else
+{$endif x86_64}
+            if fputypestrllvm[current_settings.fputype]<>'' then
+              optstr:=optstr+' -m'+fputypestrllvm[current_settings.fputype];
+{$ifdef x86_64}
+        end;
+{$endif x86_64}
 
         { restrict march to aarch64 for now to fix x86_64 compilation failure }
         if (cputypestr[current_settings.cputype]<>'')

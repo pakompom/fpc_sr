@@ -25,6 +25,11 @@ type
 {$ifdef CPULLVM}
 { LLVM lowers the intrinsic to an instruction or an exact library operation,
   including on baseline x86-64 processors without the FMA instruction set. }
+{$if defined(UNIX) and not defined(DARWIN)}
+{ LLVM's fma libcall needs an explicit link dependency, including in programs
+  using only System. Darwin supplies it through libSystem. }
+{$linklib m}
+{$endif}
 function pc24_fma(a,b,c: Double): Double; inline;
 begin
   pc24_fma:=FMADouble(a,b,c);

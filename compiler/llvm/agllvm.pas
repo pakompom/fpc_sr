@@ -685,7 +685,6 @@ implementation
             case tllvmatomicordering(taillvm(hp).oper[5]^.val) of
               lao_monotonic: owner.writer.AsmWrite(' monotonic');
               lao_seq_cst: owner.writer.AsmWrite(' seq_cst');
-              else internalerror(2026100801);
             end;
             done:=true;
           end;

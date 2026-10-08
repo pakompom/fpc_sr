@@ -13,6 +13,25 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
 
 ## Local changes
 
+- LLVM WebAssembly support for `wasm32-wasip1` and `wasm32-wasip1threads`:
+  C-compatible calls, native Wasm exceptions, memory intrinsics, atomic
+  operations and native thread-local storage. Use Clang/LLVM 17 or newer and
+  `wasm-ld`; the standard compiler cycle accepts `LLVM=1 CPU_TARGET=wasm32`.
+  LLVM WASI Preview 2 is not supported.
+
+- The WASI RTL supports standalone programs and embedding in a host runtime.
+  `FPC_WASM_EMBEDDED_RUNTIME` exposes `fpc_wasm_start` without a standalone
+  entry point; `FPC_WASM_HOST_ALLOCATOR` uses the host's allocation primitives,
+  and `FPC_WASM_SEPARATE_WASI_IMPORTS` separates Pascal's WASI imports from the
+  host's own imports. With `FPC_WASM_EMSCRIPTEN`, the host initializes pthread
+  TLS and a thread-manager unit supplies FPC's thread operations. Standalone
+  builds include the Wasm unwind helper through the RTL make rules.
+
+- LLVM Wasm fixes retain initialization/finalization functions and exact
+  virtual-method signatures, lower bitpacked indexing correctly, and support
+  the game's floating-point compatibility directives. WASI `DynLibs` reports
+  unsupported dynamic loading through the standard API.
+
 - `{$LEGACYPC24 ON/OFF}` selects 24-bit LLVM arithmetic and Delphi binary80
   constant semantics while preserving declared storage types. Single/Double
   expressions use hardware operations with corrections at rounding boundaries;

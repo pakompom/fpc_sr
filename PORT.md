@@ -1,9 +1,9 @@
 # Free Pascal for Space Rangers HD
 
 FPC 3.3.1 based on upstream revision
-[`00152d58c951b22a2a1165d18367c60d57c5abdd`](https://github.com/fpc/FPCSource/commit/00152d58c951b22a2a1165d18367c60d57c5abdd).
-The original upstream commit history is retained; the Space Rangers fixes follow
-that commit. The upstream development repository is
+[`c5f920a67ff3eb1b3d4ea0b7ef686ac44cd7c6b5`](https://github.com/fpc/FPCSource/commit/c5f920a67ff3eb1b3d4ea0b7ef686ac44cd7c6b5),
+synced on 2026-10-08. The original upstream and Space Rangers commit histories
+are retained. The upstream development repository is
 [Free Pascal](https://gitlab.com/freepascal.org/fpc/source), with a
 [GitHub mirror](https://github.com/fpc/FPCSource).
 
@@ -107,6 +107,21 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
 [SpaceRangersHD_FPC](https://github.com/pakompom/SpaceRangersHD_FPC) pins this
 repository at `vendor/fpc`. Its `tools/compiler.py` bootstraps the compiler and
 stores the generated compiler and target runtimes in the game’s `.local/fpc/`.
+
+The October 2026 sync advances this fork's PPU long version from 40 to 41 for
+upstream's new symbol serialization. Rebuild the compiler, RTL, packages and
+dependent Pascal code together; pre-sync and upstream PPUs are not compatible.
+Upstream's new statement expressions and reordered operators are enabled by
+Delphi mode. Record composition and type inquiry remain explicit mode switches.
+The compatibility directives above remain independent. Ordinary `Math.Power`
+uses upstream's new C99 boundary handling; `FPC_USE_PC24_MATH` retains the
+Delphi 2007 behavior required by the game.
+
+The fork also fixes upstream's LLVM handling of references typechecked before
+a later anonymous function moves their variable into a nested frame. Such
+references now use the final storage location. Coverage includes
+[statement expressions](tests/test/tstatementexpr39.pp) and
+[escaping closures with managed captures](tests/test/tllvmlatecapturer.pp).
 
 The compiler uses the [GNU GPL v2](LICENSE). Runtime and package licenses are
 included in their source directories, including the [runtime license](rtl/COPYING.txt)

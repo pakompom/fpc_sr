@@ -2335,6 +2335,13 @@
      LOAD_LIBRARY_SEARCH_SYSTEM32        = $0800;
      LOAD_LIBRARY_SEARCH_DEFAULT_DIRS    = $1000;
 
+  { EnumResourceTypesEx  }
+     RESOURCE_ENUM_LN           = $0001;
+     RESOURCE_ENUM_MUI          = $0002;
+     RESOURCE_ENUM_MUI_SYSTEM   = $0004;
+     RESOURCE_ENUM_VALIDATE     = $0008;
+     RESOURCE_ENUM_MODULE_EXACT = $0010;
+
   { LocalAlloc, LocalFlags  }
      LPTR = 64;
      LHND = 66;
@@ -3039,6 +3046,7 @@ Type
      SW_SHOWNA = 8;
      SW_SHOWNOACTIVATE = 4;
      SW_SHOWNORMAL = 1;
+     WPF_ASYNCWINDOWPLACEMENT = 4;
      WPF_RESTORETOMAXIMIZED = 2;
      WPF_SETMINPOSITION = 1;
   { Sleep  }

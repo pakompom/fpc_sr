@@ -154,6 +154,26 @@ implementation
           paravarsym,
           localvarsym :
             begin
+              { A later anonymous function can move a local to the nested
+                frame after this load has already been typechecked. Resolve
+                such earlier accesses against the final storage as well.
+                The field already exists: do not change the finished frame
+                layout here. Internal loads still read the incoming parameter
+                when initializing its copy in the nested frame. }
+              if not assigned(left) and
+                 not(nf_internal in flags) and
+                 tabstractnormalvarsym(symtableentry).inparentfpstruct then
+                begin
+                  nestedvars:=tprocdef(symtable.defowner).parentfpstruct;
+                  if not assigned(nestedvars) then
+                    internalerror(2026100950);
+                  nestsym:=find_sym_in_parentfpstruct(tprocdef(symtable.defowner),symtableentry);
+                  if not assigned(nestsym) then
+                    internalerror(2026100951);
+                  left:=caddrnode.create_internal(cloadnode.create(nestedvars,nestedvars.owner));
+                  include(taddrnode(left).addrnodeflags,anf_typedaddr);
+                  typecheckpass(left);
+                end;
               { Nested variable? Then we have to move it to a structure that
                 can be passed by reference to nested routines }
               if assigned(left) and

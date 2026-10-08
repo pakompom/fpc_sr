@@ -1724,6 +1724,14 @@ parser_e_no_suitable_newinstance_method_found=03374_E_No suitable NewInstance me
 parser_w_unaligned_useless=03375_W_Unaligned is useless here.
 parser_w_aligned_useless=03376_W_Aligned is useless here.
 % Use of aligned(EXPR) or unaligned(EXPR) only has an effect if EXPR is a dereference.
+parser_e_stmt_expr_requires_else=03377_E_Statement expression does not handle all cases, an else branch is required
+% A case or try..except expression must return a value in all cases. Either the case labels
+% cover all possible values, or add an else (otherwise) branch.
+parser_e_stmt_expr_no_finally=03378_E_try..finally cannot be used as an expression
+% Only try..except can be used as expression
+parser_e_stmt_expr_anon_needs_type=03379_E_Anonymous functions in a statement expression require a procedural variable or function reference type
+% A statement expression with anonymous functions as values can only be assigned or passed
+% to a procedural variable or a function reference.
 %
 % \end{description}
 %
@@ -2199,7 +2207,7 @@ type_e_interface_has_no_name=04135_E_Interface type $1 has no valid name
 #
 # Symtable
 #
-# 05101 is the last used one
+# 05103 is the last used one
 #
 % \section{Symbol handling}
 % This section lists all the messages that concern the handling of symbols.
@@ -2526,6 +2534,10 @@ sym_f_systemunitnotloaded=05100_F_System unit not loaded
 sym_e_wasm_ref_types_cannot_be_used_in_records=05101_E_WebAssembly reference types cannot be used inside records, objects, or classes
 % WebAssembly reference types don't have an in-memory representation and therefore
 % cannot be used inside records, objects or classes.
+sym_e_type_must_be_record=05102_E_Record type expected
+% The variable or expression isn't of the type \var{record}.
+sym_w_overload_not_possible=05103_W_Identifier "$1" cannot be overloaded for type "$2"
+% The identifier is already defined for this type, but cannot be overloaded
 %
 % \end{description}
 #

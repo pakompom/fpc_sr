@@ -492,6 +492,12 @@ begin
 {$include libgd/fpmake.pp}
 end;
 
+procedure add_libheif(const ADirectory: string);
+begin
+  with Installer do
+{$include libheif/fpmake.pp}
+end;
+
 procedure add_libjack(const ADirectory: string);
 begin
   with Installer do
@@ -982,6 +988,12 @@ procedure add_zorba(const ADirectory: string);
 begin
   with Installer do
 {$include zorba/fpmake.pp}
+end;
+
+procedure add_fcl_svg(const ADirectory: string);
+begin
+  with Installer do
+{$include fcl-svg/fpmake.pp}
 end;
 
 {$include fcl-sonar/fpmake.pp}

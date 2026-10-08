@@ -350,7 +350,9 @@ type
     msMultiLineStrings,     { pas2js: Multiline strings }
     msDelphiMultiLineStrings, { Delpi-compatible multiline strings }
     msInlineVars,             { Allow inline var declarations }
-    msStatementExpressions    { allow if-expressions }
+    msStatementExpressions,   { allow if-expressions }
+    msTypeInquiry,            { allow "type of" operator }
+    msRecordComposition       { allow "contains" in records }
     );
   TModeSwitches = Set of TModeSwitch;
 
@@ -451,7 +453,7 @@ const
      'com', // vsInterfaces
      'Msg', // vsDispatchField
      'MsgStr', // vsDispatchStrField
-     '0', // vsMinEnumSize (0 = natural size)
+     '4', // vsMinEnumSize (FPC mode default; Delphi/TP use 1, MacPas 2)
      '0', // vsPackSet (0 = natural)
      '0' // vsPackRecords (0 = natural alignment)
      );
@@ -1235,7 +1237,9 @@ const
     'MULTILINESTRINGS',
     'DELPHIMULTILINESTRINGS',
     'INLINEVARS',
-    'STATEMENTEXPRESSIONS'
+    'STATEMENTEXPRESSIONS',
+    'TYPEINQUIRY',
+    'RECORDCOMPOSITION'
     );
 
   LetterSwitchNames: array['A'..'Z'] of TPasScannerString=(
@@ -1341,7 +1345,7 @@ const
 
   OBJFPCModeSwitches =  [msObjfpc,msClass,msObjpas,msResult,msStringPchar,msNestedComment,
     msRepeatForward,msCVarSupport,msInitFinal,msOut,msDefaultPara,msHintDirective,
-    msProperty,msDefaultInline,msExcept,msDelphiMultiLineStrings];
+    msProperty,msDefaultInline,msExcept,msDelphiMultiLineStrings,msTypeInquiry];
 
   TPModeSwitches = [msTP7,msTPProcVar,msDuplicateNames];
 
@@ -1356,7 +1360,7 @@ const
 
   ExtPasModeSwitches = [msExtpas,msTPProcVar,msDuplicateNames,msNestedProcVars,
     msNonLocalGoto,msISOLikeUnaryMinus,msISOLikeIO,msISOLikeProgramsPara,
-    msISOLikeMod];
+    msISOLikeMod,msTypeInquiry];
 
 function StrToModeSwitch(aName: TPasScannerString): TModeSwitch;
 function ModeSwitchesToStr(Switches: TModeSwitches): TPasScannerString;
@@ -1452,21 +1456,53 @@ begin
     end;
 end;
 
-function IndexOfToken(Const AToken : TPasScannerString) : Integer;
+function CompareLowerCased(Const AWord,ALower : TPasScannerString) : Integer;
+// AWord against a word that is already lower case, folding A..Z of AWord as the
+// comparison goes. This saves making a lower cased copy of AWord, which is one
+// heap allocation for every identifier the scanner reads. The order is the one
+// SortTokenInfo sorted the table in: character for character, and the shorter
+// word first when one is the start of the other.
 
 var
-  B,T,M : Integer;
-  N : TPasScannerString;
+  I,L,CA,CB : Integer;
+
+begin
+  L:=Length(AWord);
+  if Length(ALower)<L then
+    L:=Length(ALower);
+  for I:=1 to L do
+    begin
+    CA:=Ord(AWord[I]);
+    if (CA>=Ord('A')) and (CA<=Ord('Z')) then
+      Inc(CA,Ord('a')-Ord('A'));
+    CB:=Ord(ALower[I]);
+    if CA<>CB then
+      begin
+      if CA<CB then
+        Exit(-1)
+      else
+        Exit(1);
+      end;
+    end;
+  Result:=Length(AWord)-Length(ALower);
+end;
+
+
+function IndexOfToken(Const AToken : TPasScannerString) : Integer;
+// The place of AToken in SortedTokens, whatever case it is written in, or -1.
+
+var
+  B,T,M,C : Integer;
 begin
   B:=0;
   T:=Length(SortedTokens)-1;
   while (B<=T) do
     begin
     M:=(B+T) div 2;
-    N:=LowerCaseTokens[SortedTokens[M]];
-    if (AToken<N) then
+    C:=CompareLowerCased(AToken,LowerCaseTokens[SortedTokens[M]]);
+    if C<0 then
       T:=M-1
-    else if (AToken=N) then
+    else if C=0 then
       Exit(M)
     else
       B:=M+1;
@@ -1482,7 +1518,7 @@ Var
 begin
   if (Length(SortedTokens)=0) then
     SortTokenInfo;
-  I:=IndexOfToken(LowerCase(AToken));
+  I:=IndexOfToken(AToken);
   Result:=I<>-1;
   If Result then
     T:=SortedTokens[I];
@@ -4985,15 +5021,18 @@ end;
 
 procedure TPascalScanner.HandlePackValue(vs: TValueSwitch; const Param: TPasScannerString);
 // {$MINENUMSIZE/$PACKENUM/$PACKSET/$PACKRECORDS n}: n is 1/2/4/8, or
-// "default"/"normal" (-> 0 = natural).
+// "default"/"normal" (4 for an enum, else 0 = natural).
 var
   S: TPasScannerString;
 begin
   if not (vs in AllowedValueSwitches) then
     Error(nWarnIllegalCompilerDirectiveX,sWarnIllegalCompilerDirectiveX,[ValueSwitchNames[vs]]);
   S:=Trim(Param);
-  if SameText(S,'DEFAULT') or SameText(S,'NORMAL') then
-    S:='0';
+  if SameText(S,'DEFAULT') or SameText(S,'NORMAL') or SameText(S,'FIXED') then
+    if vs=vsMinEnumSize then
+      S:='4'
+    else
+      S:='0';
   CurrentValueSwitch[vs]:=S;
 end;
 
@@ -5093,6 +5132,22 @@ procedure TPascalScanner.HandleMode(const Param: TPasScannerString);
         UnsetNonToken(tkotherwise)
       else
         SetNonToken(tkotherwise);
+      // Enum and set storage defaults of the mode, as fpc sets them.
+      case LangMode of
+      msDelphi,msDelphiUnicode,msTP7:
+        begin
+        CurrentValueSwitch[vsMinEnumSize]:='1';
+        CurrentValueSwitch[vsPackSet]:='1';
+        end;
+      msMac:
+        begin
+        CurrentValueSwitch[vsMinEnumSize]:='2';
+        CurrentValueSwitch[vsPackSet]:='0';
+        end;
+      else
+        CurrentValueSwitch[vsMinEnumSize]:='4';
+        CurrentValueSwitch[vsPackSet]:='0';
+      end;
       end;
     Handled:=false;
     FileResolver.Mode:=LangMode;
@@ -5533,6 +5588,8 @@ begin
         HandleDispatchField(Param,vsDispatchStrField);
       'MINENUMSIZE', 'PACKENUM':
         HandlePackValue(vsMinEnumSize,Param);
+      'Z1', 'Z2', 'Z4':
+        HandlePackValue(vsMinEnumSize,Directive[2]);
       'PACKSET':
         HandlePackValue(vsPackSet,Param);
       'PACKRECORDS':
@@ -5968,6 +6025,7 @@ function TPascalScanner.DoFetchToken: TToken;
 var
   TokenStart: {$ifdef UsePChar}PAnsiChar{$else}integer{$endif};
   i: TToken;
+  NamedTok: TToken;
   QuoteLen, SectionLength, Index: Integer;
   {$ifdef UsePChar}
   //
@@ -6439,14 +6497,12 @@ begin
       SectionLength := FTokenPos - TokenStart;
       FetchCurTokenString;
       Result:=tkIdentifier;
-      for i:=tkAbsolute to tkXor do
-        begin
-        if (CompareText(CurTokenString, TokenInfos[i])=0) then
-          begin
-          Result:=I;
-          break;
-          end;
-        end;
+      // Binary search over the sorted table instead of comparing against every
+      // keyword in turn: an identifier that is not a keyword used to walk the
+      // whole list, and CurTokenString is a function, so it was built again for
+      // each comparison - together 7% of scanning a large table unit.
+      if IsNamedToken(CurTokenString,NamedTok) then
+        Result:=NamedTok;
       if (Result<>tkIdentifier) and (Result in FNonTokens) then
         Result:=tkIdentifier;
       FCurToken := Result;

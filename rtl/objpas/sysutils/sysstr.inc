@@ -194,7 +194,15 @@ begin
     Count:=Count2
   else
     Count:=Count1;
+{$IF SIZEOF(CHAR)=1}
   result := CompareMemRange(Pointer(S1),Pointer(S2), Count);
+{$ELSE}
+  // Length counts code units of two bytes, and those compare as words.
+  if (Count=0) or (Pointer(S1)=Pointer(S2)) then
+    result:=0
+  else
+    result:=CAPSIZEINT(CompareWord(Pointer(S1)^,Pointer(S2)^,Count));
+{$ENDIF}
   if result=0 then
     // CAPSIZEINT is no-op if Sizeof(Sizeint)<=SizeOF(Integer)
     result:=CAPSIZEINT(Count1-Count2);
@@ -243,7 +251,8 @@ function CompareText(const S1, S2: string): Integer; overload;
 
 var
   i, count, count1, count2: sizeint;
-  Chr1, Chr2: byte;
+  // A code unit of the string, which is a byte or a word.
+  Chr1, Chr2: SizeUInt;
   P1, P2: PChar;
 begin
   Count1 := Length(S1);
@@ -253,19 +262,21 @@ begin
   else
     Count := Count1;
   i := 0;
+  Chr1 := 0;
+  Chr2 := 0;
   if count>0 then
     begin
       P1 := @S1[1];
       P2 := @S2[1];
       while i < Count do
         begin
-          Chr1 := byte(p1^);
-          Chr2 := byte(p2^);
+          Chr1 := Ord(p1^);
+          Chr2 := Ord(p2^);
           if Chr1 <> Chr2 then
             begin
-              if Chr1 in [97..122] then
+              if (Chr1>=97) and (Chr1<=122) then
                 dec(Chr1,32);
-              if Chr2 in [97..122] then
+              if (Chr2>=97) and (Chr2<=122) then
                 dec(Chr2,32);
               if Chr1 <> Chr2 then
                 Break;
@@ -274,7 +285,7 @@ begin
         end;
     end;
   if i < Count then
-    result := Chr1-Chr2
+    result := CAPSIZEINT(SizeInt(Chr1)-SizeInt(Chr2))
   else
     // CAPSIZEINT is no-op if Sizeof(Sizeint)<=SizeOF(Integer)
     result:=CAPSIZEINT(Count1-Count2);
@@ -718,7 +729,10 @@ begin
  if P=Q then
    exit;
  if P^<>quote then
-   exit(strpas(P));
+   begin
+   SetString(Result,P,Q-P);
+   exit;
+   end;
  inc(p);
  setlength(result,(Q-P)+1);
  R:=@Result[1];
@@ -752,7 +766,10 @@ begin
  if P=Q then
    exit;
  if P^<>quote then
-   exit(strpas(P));
+   begin
+   SetString(Result,P,Q-P);
+   exit;
+   end;
  inc(p);
  setlength(result,(Q-P)+1);
  R:=@Result[1];
@@ -2448,8 +2465,7 @@ Var
 
 Begin
   Len:=FloatToTextFmt(PChar(@Buf[0]),Value,PChar(Format),FormatSettings);
-  Buf[Len]:=#0;
-  Result:=StrPas(Pchar(@Buf[0]));
+  SetString(Result,PChar(@Buf[0]),Len);
 End;
 
 Function FormatFloat(Const format: String; Value: Extended): String;

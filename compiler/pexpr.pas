@@ -29,7 +29,7 @@ interface
       symtype,symdef,symbase,
       node,ncal,compinnr,
       tokens,globtype,globals,constexp,pc24const,
-      pgentype;
+      pgentype,pstatmnt;
 
     type
       texprflag = (
@@ -48,6 +48,12 @@ interface
 
     { reads a single factor }
     function factor(getaddr:boolean;flags:texprflags) : tnode;
+
+    { parse "type of <operand>" and returns the type.
+      The operand is only parsed and type checked, its node tree is discarded,
+      so the operand is never executed.
+      typetokenconsumed=true means the "type" token was already consumed. }
+    function parse_type_inquiry(typetokenconsumed:boolean):tdef;
 
     procedure string_dec(var def: tdef; allowtypedef: boolean);
 
@@ -90,6 +96,50 @@ implementation
        anon_inherited : boolean = false;
        { last def found, only used by anon. inherited calls to insert proper type casts }
        srdef : tdef = nil;
+       { true while parsing the argument of NameOf }
+       nameof_active : boolean = false;
+       { last symbol found while parsing the argument of NameOf }
+       nameof_sym : tsym = nil;
+       { position of the token following nameof_sym }
+       nameof_nextpos : tfileposinfo;
+
+    procedure nameof_record_sym(sym:tsym);
+      begin
+        if not nameof_active or not assigned(sym) then
+          exit;
+        nameof_sym:=sym;
+        nameof_nextpos:=current_filepos;
+      end;
+
+    { returns the declared name of sym without generic parameters }
+    function nameof_symname(sym:tsym):string;
+      var
+        i : longint;
+      begin
+        if (sym.typ in [absolutevarsym,localvarsym,paravarsym]) and
+           (vo_is_funcret in tabstractvarsym(sym).varoptions) then
+          begin
+            { the function result symbols are stored uppercase }
+            if vo_is_result in tabstractvarsym(sym).varoptions then
+              exit('Result');
+            if assigned(sym.owner.defowner) and
+               (tdef(sym.owner.defowner).typ=procdef) then
+              exit(tprocdef(sym.owner.defowner).procsym.realname);
+          end;
+        { use the declared unit name, e.g. the implicit system unit is stored uppercase }
+        if (sym.typ=unitsym) and
+           assigned(tunitsym(sym).module) and
+           assigned(tmodule(tunitsym(sym).module).realmodulename) then
+          exit(tmodule(tunitsym(sym).module).realmodulename^);
+        result:=sym.realname;
+        for i:=1 to length(result) do
+          if result[i] in ['$','<'] then
+            begin
+              if i>1 then
+                setlength(result,i-1);
+              break;
+            end;
+      end;
 
     procedure string_dec(var def:tdef; allowtypedef: boolean);
     { reads a string type with optional length }
@@ -270,6 +320,10 @@ implementation
         prev_in_args : boolean;
         def : tdef;
         exit_procinfo: tprocinfo;
+        old_nameof_active,
+        nameof_ok : boolean;
+        old_nameof_sym : tsym;
+        old_nameof_nextpos : tfileposinfo;
       begin
         prev_in_args:=in_args;
         case l of
@@ -933,6 +987,56 @@ implementation
               consume(_RKLAMMER);
             end;
 
+          in_nameof_x:
+            begin
+              consume(_LKLAMMER);
+              in_args:=true;
+              { save the state: e.g. NameOf(TGen<byte>) may parse NameOf while specializing }
+              old_nameof_active:=nameof_active;
+              old_nameof_sym:=nameof_sym;
+              old_nameof_nextpos:=nameof_nextpos;
+              nameof_active:=true;
+              nameof_sym:=nil;
+              { only an identifier or a dotted identifier chain is allowed }
+              nameof_ok:=current_scanner.token=_ID;
+              if current_scanner.token=_RKLAMMER then
+                { NameOf() }
+                p1:=cnothingnode.create
+              else
+                { getaddr: do not turn a procedure into a call }
+                p1:=factor(true,[]);
+              if current_scanner.token<>_RKLAMMER then
+                begin
+                  { e.g. inline specialization TBird<Boolean> }
+                  p1:=sub_expr(opcompare,[ef_accept_equal],p1);
+                  if p1.nodetype in [addn,subn,muln,slashn,divn,modn,symdifn,starstarn,
+                      equaln,unequaln,ltn,lten,gtn,gten,inn,isn,asn,orn,andn,xorn,
+                      shln,shrn,notn,assignn] then
+                    nameof_ok:=false;
+                end;
+              { the last found identifier must be directly followed by ")" }
+              nameof_ok:=nameof_ok and
+                assigned(nameof_sym) and
+                (nameof_sym.typ<>errorsym) and
+                (nameof_nextpos.line=current_filepos.line) and
+                (nameof_nextpos.column=current_filepos.column) and
+                (nameof_nextpos.fileindex=current_filepos.fileindex) and
+                (nameof_nextpos.moduleindex=current_filepos.moduleindex);
+              if nameof_ok then
+                statement_syssym:=cstringconstnode.createstr(nameof_symname(nameof_sym))
+              else
+                begin
+                  if p1.nodetype<>errorn then
+                    Message(parser_e_illegal_expression);
+                  statement_syssym:=cerrornode.create;
+                end;
+              p1.free;
+              nameof_active:=old_nameof_active;
+              nameof_sym:=old_nameof_sym;
+              nameof_nextpos:=old_nameof_nextpos;
+              consume(_RKLAMMER);
+            end;
+
           in_setstring_x_y_z:
             begin
               statement_syssym := inline_setstring;
@@ -1009,6 +1113,18 @@ implementation
       end;
 
 
+    function load_self_or_inquiry_base(def:tdef):tnode;
+      begin
+        { in a "type of" operand inside a record/object/class declaration
+          there is no self; only the type is needed, so use the type as base }
+        if current_module.in_type_inquiry and
+           not assigned(get_local_or_para_sym('self')) then
+          result:=ctypenode.create(def)
+        else
+          result:=load_self_node;
+      end;
+
+
     function maybe_load_methodpointer(st:TSymtable;var p1:tnode):boolean;
       var
         pd: tprocdef;
@@ -1036,10 +1152,10 @@ implementation
                        else
                          p1:=cloadvmtaddrnode.create(ctypenode.create(pd.struct))
                      else
-                       p1:=load_self_node;
+                       p1:=load_self_or_inquiry_base(tdef(st.defowner));
                    end
                  else
-                   p1:=load_self_node;
+                   p1:=load_self_or_inquiry_base(tdef(st.defowner));
                  { don't try to call the invokable again }
                  if is_invokable(tdef(st.defowner)) then
                    include(p1.flags,nf_load_procvar);
@@ -1110,8 +1226,14 @@ implementation
                this is only temporary we use a non translated message }
              if assigned(spezcontext) then
                begin
-                 comment(v_error, 'Pointers to generics functions not implemented');
-                 p1:=cerrornode.create;
+                 if nameof_active then
+                   { NameOf(GenericFunc<T>) only needs the name }
+                   p1:=cnothingnode.create
+                 else
+                   begin
+                     comment(v_error, 'Pointers to generics functions not implemented');
+                     p1:=cerrornode.create;
+                   end;
                  spezcontext.free;
                  spezcontext := nil;
                  exit;
@@ -1319,6 +1441,13 @@ implementation
          propaccesslist : tpropaccesslist;
          sym: tsym;
       begin
+         { NameOf(property) needs neither parameters nor read access }
+         if nameof_active and (current_scanner.token=_RKLAMMER) then
+           begin
+             p1.free;
+             p1:=cnothingnode.create;
+             exit;
+           end;
          { property parameters? read them only if the property really }
          { has parameters                                             }
          paras:=nil;
@@ -1474,6 +1603,7 @@ implementation
            end
          else
            begin
+              nameof_record_sym(sym);
               if assigned(p1) then
                begin
                  if not assigned(p1.resultdef) then
@@ -1613,6 +1743,12 @@ implementation
                           p1:=csubscriptnode.create(sym,p1);
                         end;
                    end;
+                 symrefsym:
+                   begin
+                     do_member_read(structh,getaddr,tsymrefsym(sym).fieldvs,p1,again,callflags,spezcontext);
+                     structh:=tabstractrecorddef(tsymrefsym(sym).fieldvs.vardef);
+                     do_member_read(structh,getaddr,tsymrefsym(sym).ref,p1,again,callflags,spezcontext);
+                   end;
                  propertysym:
                    begin
                       if isclassref and not (sp_static in sym.symoptions) then
@@ -1705,6 +1841,7 @@ implementation
                       begin
                         srsym:=tprocdef(spezdef).procsym;
                         srsymtable:=srsym.owner;
+                        nameof_record_sym(srsym);
                         result:=true;
                       end;
                   end;
@@ -1721,6 +1858,7 @@ implementation
                         srsym:=spezdef.typesym;
                         srsymtable:=srsym.owner;
                         check_hints(srsym,srsym.symoptions,srsym.deprecatedmsg);
+                        nameof_record_sym(srsym);
                         result:=true;
                       end;
                   end;
@@ -2636,7 +2774,10 @@ implementation
                                end
                              else
                                begin
-                                 Message1(sym_e_id_no_member,current_scanner.orgpattern);
+                                 if oo_composites_generic in tabstractrecorddef(p1.resultdef).objectoptions then
+                                   erroroutp1:=true
+                                 else
+                                   Message1(sym_e_id_no_member,current_scanner.orgpattern);
                                  { try to clean up }
                                  consume(_ID);
                                end;
@@ -2664,6 +2805,7 @@ implementation
                              check_hints(srsym,srsym.symoptions,srsym.deprecatedmsg);
                              p1:=genenumnode(tenumsym(srsym));
                              consume(_ID);
+                             nameof_record_sym(srsym);
                            end
                          else
                            if not try_type_helper(p1,nil) then
@@ -3086,7 +3228,8 @@ implementation
           staticvarsym,
           localvarsym,
           paravarsym,
-          fieldvarsym :
+          fieldvarsym,
+          symrefsym :
             begin
               { check if we are reading a field of an object/class/   }
               { record. is_member_read() will deal with withsymtables }
@@ -3116,10 +3259,10 @@ implementation
                             if assigned(pd) and pd.no_self_node then
                               result:=cloadvmtaddrnode.create(ctypenode.create(pd.struct))
                             else
-                              result:=load_self_node;
+                              result:=load_self_or_inquiry_base(hdef);
                           end
                         else
-                          result:=load_self_node;
+                          result:=load_self_or_inquiry_base(hdef);
                       end;
                   { now, if the field itself is part of an objectsymtab }
                   { (it can be even if it was found in a withsymtable,  }
@@ -3274,7 +3417,7 @@ implementation
                           result:=cloadvmtaddrnode.create(result);
                       end
                     else
-                      result:=load_self_node;
+                      result:=load_self_or_inquiry_base(hdef);
                   { not srsymtable.symtabletype since that can be }
                   { withsymtable as well                          }
                   if (srsym.owner.symtabletype in [ObjectSymtable,recordsymtable]) then
@@ -3325,6 +3468,19 @@ implementation
               srsym := nil;
             end;
 
+          unitsym,
+          namespacesym :
+            begin
+              if nameof_active then
+                { NameOf(unitname) }
+                result:=cnothingnode.create
+              else
+                begin
+                  result:=cerrornode.create;
+                  Message(parser_e_illegal_expression);
+                end;
+            end;
+
           errorsym :
             begin
               result:=cerrornode.create;
@@ -3341,6 +3497,94 @@ implementation
               Message(parser_e_illegal_expression);
             end;
         end; { end case }
+      end;
+
+
+    { finds a variable, field or parameter whose type is not yet parsed,
+      i.e. which still has the placeholder generrordef }
+    function find_incomplete_varsym(var n: tnode; arg: pointer): foreachnoderesult;
+      var
+        sym : tsym;
+      begin
+        result:=fen_false;
+        sym:=nil;
+        case n.nodetype of
+          loadn:
+            sym:=tloadnode(n).symtableentry;
+          subscriptn:
+            sym:=tsubscriptnode(n).vs;
+          else
+            ;
+        end;
+        if assigned(sym) and
+           (sym is tabstractvarsym) and
+           (tabstractvarsym(sym).vardef=generrordef) then
+          begin
+            if not assigned(tsym(arg^)) then
+              tsym(arg^):=sym;
+            result:=fen_norecurse_true;
+          end;
+      end;
+
+
+    function parse_type_inquiry(typetokenconsumed:boolean):tdef;
+      var
+        n : tnode;
+        oldlocalswitches : tlocalswitches;
+        old_block_type : tblock_type;
+        old_in_type_inquiry : boolean;
+        ecnt : longint;
+        operandpos : tfileposinfo;
+        incompletesym : tsym;
+      begin
+        result:=generrordef;
+        if not typetokenconsumed then
+          consume(_TYPE);
+        consume(_OF);
+        ecnt:=errorcount;
+        operandpos:=current_tokenpos;
+        old_block_type:=block_type;
+        oldlocalswitches:=current_settings.localswitches;
+        old_in_type_inquiry:=current_module.in_type_inquiry;
+        current_module.in_type_inquiry:=true;
+        { Disable range and overflow checks. }
+        current_settings.localswitches:=current_settings.localswitches-[cs_check_range,cs_check_overflow];
+        { parse the operand like a normal expression, independent of the
+          declaration section the operator is used in }
+        block_type:=bt_body;
+        n:=factor(false,[]);
+        do_typecheckpass(n);
+        current_module.in_type_inquiry:=old_in_type_inquiry;
+        block_type:=old_block_type;
+        current_settings.localswitches:=oldlocalswitches;
+        if not assigned(n) then
+          exit;
+        { a type identifier is not a valid operand }
+        if (n.nodetype=typen) or
+           ((n.nodetype=loadvmtaddrn) and
+            assigned(tloadvmtaddrnode(n).left) and
+            (tloadvmtaddrnode(n).left.nodetype=typen)) then
+          Message(parser_e_no_type_not_allowed_here)
+        else if assigned(n.resultdef) then
+          result:=n.resultdef;
+        { a symbol used inside its own declaration, e.g. "var a: array of type of a;",
+          has not yet a type and silently yields generrordef }
+        if (result=generrordef) and
+           (errorcount=ecnt) then
+          begin
+            incompletesym:=nil;
+            foreachnodestatic(n,@find_incomplete_varsym,@incompletesym);
+            if assigned(incompletesym) then
+              MessagePos1(operandpos,type_e_type_is_not_completly_defined,'type of '+incompletesym.realname)
+            else
+              MessagePos1(operandpos,type_e_type_is_not_completly_defined,'type of');
+          end;
+        { in a generic the operand can be an undefineddef without typesym (e.g. "type of PT^") }
+        if (result.typ=undefineddef) and
+           not assigned(result.typesym) then
+          result:=cundefinedtype;
+        { only the type is needed, discard the node }
+        n.free;
       end;
 
 
@@ -3448,6 +3692,8 @@ implementation
                      include(cufflags,cuf_allow_specialize);
                    if ef_check_attr_suffix in flags then
                      include(cufflags,cuf_check_attr_suffix);
+                   if nameof_active then
+                     include(cufflags,cuf_allow_unit_only);
                    unit_found:=try_consume_unitsym(srsym,srsymtable,t,cufflags,isspecialize,current_scanner.pattern);
                    if unit_found then
                      consumeid:=true;
@@ -3457,7 +3703,8 @@ implementation
                    unit_found:=false;
                    t:=_ID;
                  end;
-               if consumeid then
+               { NOTOKEN: NameOf(unitname), the unit name is already consumed }
+               if consumeid and (t<>NOTOKEN) then
                  begin
                    storedpattern:=current_scanner.pattern;
                    orgstoredpattern:=current_scanner.orgpattern;
@@ -3667,6 +3914,7 @@ implementation
             end;
 
             begin
+              nameof_record_sym(srsym);
               p1:=factor_handle_sym(srsym,srsymtable,again,getaddr,unit_found,flags,spezcontext);
 
               if assigned(spezcontext) then
@@ -4363,6 +4611,25 @@ implementation
                     postfixoperators(p1,again,getaddr);
                   end;
                end;
+             _TYPE:
+               begin
+                 { "type of <operand>" }
+                 if not (m_type_inquiry in current_settings.modeswitches) then
+                   begin
+                     Message(parser_e_illegal_expression);
+                     consume(_TYPE);
+                     p1:=cerrornode.create;
+                   end
+                 else
+                   begin
+                     hdef:=parse_type_inquiry(false);
+                     again:=false;
+                     { handle type cast "type of <operand>(<expr>)" and
+                       member access like a normal type }
+                     p1:=handle_factor_typenode(hdef,getaddr,again,hdef.typesym,ef_type_only in flags);
+                     postfixoperators(p1,again,getaddr);
+                   end;
+               end;
              _OBJCPROTOCOL:
                begin
                  { The @protocol keyword is used in two ways in Objective-C:
@@ -4414,7 +4681,7 @@ implementation
                    end;
                end
 
-             else
+             else if not statement_expr(p1) then
                begin
                  Message(parser_e_illegal_expression);
                  p1:=cerrornode.create;
@@ -4544,6 +4811,7 @@ implementation
           unitspecific : boolean;
           pload : tnode;
           spezcontext : tspecializationcontext;
+          orggensym : tsym;
           structdef,
           inheriteddef : tabstractrecorddef;
           callflags : tcallnodeflags;
@@ -4571,6 +4839,7 @@ implementation
             gendef:=generate_specialization_phase1(spezcontext,gendef,unitspecific,parseddef,gensym.realname,gensym.owner,p2.fileinfo)
           else
             gendef:=generate_specialization_phase1(spezcontext,gendef,unitspecific,gensym.realname,gensym.owner);
+          orggensym:=gensym;
           case gendef.typ of
             errordef:
               begin
@@ -4606,6 +4875,9 @@ implementation
             else
               internalerror(2015092702);
           end;
+          { the generic parameters are parsed and the specialization is done,
+            NameOf uses the generic name }
+          nameof_record_sym(orggensym);
 
           { in case of a class or a record the specialized generic
             is always a classrefdef }
@@ -4677,11 +4949,11 @@ implementation
                   end
                 else
                   { handle potential typecasts, etc }
-                  result:=handle_factor_typenode(gendef,false,again,nil,false);
+                  result:=handle_factor_typenode(gendef,nameof_active,again,nil,false);
             end;
 
-          { parse postfix operators }
-          if postfixoperators(result,again,false) then
+          { parse postfix operators, NameOf does not need an instance }
+          if postfixoperators(result,again,nameof_active) then
             if assigned(result) then
               result.fileinfo:=filepos
             else
@@ -4744,8 +5016,9 @@ implementation
       var
         p1,p2,ptmp : tnode;
         oldt    : Ttoken;
+        negate  : boolean;
         filepos : tfileposinfo;
-        gendef,parseddef : tdef;
+        gendef : tdef;
         gensym : tsym;
         genlist : tfpobjectlist;
         dummyagain : boolean;
@@ -4762,13 +5035,34 @@ implementation
         else
           p1:=sub_expr(succ(pred_level),flags+[ef_accept_equal],factornode);
         repeat
-          if (current_scanner.token in [NOTOKEN..last_operator]) and
-             (current_scanner.token in operator_levels[pred_level]) and
-             ((current_scanner.token<>_EQ) or (ef_accept_equal in flags)) then
+          { "not" is only a prefix operator, so a "not" directly behind an
+            operand can only be the start of "not in" }
+          if ((pred_level=opcompare) and
+              (current_scanner.token=_OP_NOT) and
+              (m_reordered_operators in current_settings.modeswitches)) or
+             ((current_scanner.token in [NOTOKEN..last_operator]) and
+              (current_scanner.token in operator_levels[pred_level]) and
+              ((current_scanner.token<>_EQ) or (ef_accept_equal in flags))) then
            begin
-             oldt:=current_scanner.token;
              filepos:=current_tokenpos;
-             consume(current_scanner.token);
+             if current_scanner.token=_OP_NOT then
+               begin
+                 { "a not in b" is a short form for "not (a in b)" }
+                 consume(_OP_NOT);
+                 consume(_OP_IN);
+                 oldt:=_OP_IN;
+                 negate:=true;
+               end
+             else
+               begin
+                 oldt:=current_scanner.token;
+                 consume(current_scanner.token);
+                 { "a is not b" is a short form for "not (a is b)", i.e. the "not"
+                   belongs to the "is" and not to the right operand }
+                 negate:=(oldt=_OP_IS) and
+                   (m_reordered_operators in current_settings.modeswitches) and
+                   try_to_consume(_OP_NOT);
+               end;
              if pred_level=highest_precedence then
                p2:=factor(false,[])
              else
@@ -4919,13 +5213,27 @@ implementation
                      _OP_AS:
                        p1:=casnode.create(p1,p2);
                      _OP_IS:
-                       p1:=cisnode.create(p1,p2);
+                       begin
+                         p1:=cisnode.create(p1,p2);
+                         if negate then
+                           begin
+                             p1.fileinfo:=filepos;
+                             p1:=cnotnode.create(p1);
+                           end;
+                       end;
                      else
                        internalerror(2019050528);
                    end;
                  end;
                _OP_IN :
-                 p1:=cinnode.create(p1,p2);
+                 begin
+                   p1:=cinnode.create(p1,p2);
+                   if negate then
+                     begin
+                       p1.fileinfo:=filepos;
+                       p1:=cnotnode.create(p1);
+                     end;
+                 end;
                _OP_OR,
                _PIPE {macpas only} :
                  begin
@@ -5128,7 +5436,6 @@ implementation
     var
       p:tnode;
       snode : tstringconstnode absolute p;
-      s : string;
       pw : tcompilerwidestring;
       pc : pansichar;
       len : Integer;

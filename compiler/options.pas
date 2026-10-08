@@ -3691,6 +3691,7 @@ begin
           'e' :
             begin
               SetErrorFlags(copy(more,j+1));
+              init_settings.verbosity:=status.verbosity;
               break;
             end;
           'f' :
@@ -3903,7 +3904,9 @@ procedure TOption.Interpret_V_l(opt, more: TCmdStr);
 
 begin
   if not setverbosity(More) then
-    IllegalPara(opt);
+    IllegalPara(opt)
+  else
+    init_settings.verbosity:=status.verbosity;
 end;
 
 

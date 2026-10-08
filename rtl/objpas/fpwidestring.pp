@@ -446,7 +446,7 @@ function CompareUnicodeString(const s1, s2 : UnicodeString;Options : TCompareOpt
   begin
     changedProps.ComparisonStrength := current_Collation.Data.ComparisonStrength;
     try
-      if (coIgnoreCase in Options) then
+      if (Options*[coIgnoreCase,coLingIgnoreCase]<>[]) then
         current_Collation.Data.ComparisonStrength := SECONDARY_STRENGTH_LEVEL;
       Result:=CompareUnicodeString(
                 PUnicodeChar(Pointer(s1)),
@@ -482,7 +482,7 @@ function CompareWideString(const s1, s2 : WideString; Options : TCompareOptions)
   begin
     changedProps.ComparisonStrength := current_Collation.Data.ComparisonStrength;
     try
-      if (coIgnoreCase in Options) then
+      if (Options*[coIgnoreCase,coLingIgnoreCase]<>[]) then
         current_Collation.Data.ComparisonStrength := SECONDARY_STRENGTH_LEVEL;
       Result:=CompareUnicodeString(
                 PUnicodeChar(Pointer(s1)),
@@ -559,6 +559,8 @@ begin
       us:=UpperUnicodeString(us);
 
       ulen:=Length(us);
+      if ulen=0 then
+        exit('');
       slen:=UnicodeToUtf8(nil,high(SizeUInt),@us[1],ulen);
       { The conversion count includes the terminating zero, unlike string length. }
       SetLength(Result,slen-1);
@@ -593,12 +595,13 @@ begin
           usl:=UpperUnicodeString(us);
           for k:=1 to Length(usl) do
             begin
-              aalen:=getascii(tunicodechar(us[k]),locMap,@aa[Low(aa)],Length(aa));
+              aalen:=getascii(tunicodechar(usl[k]),locMap,@aa[Low(aa)],Length(aa));
               for ai:=0 to aalen-1 do
                 ConcatCharToAnsiStr(aa[ai],result,resindex);
             end;
         end;
       Inc(p,mblen);
+      Inc(i,mblen);
     end;
   SetLength(result,resindex-1);
 end;
@@ -626,6 +629,8 @@ begin
       us:=LowerUnicodeString(us);
 
       ulen:=Length(us);
+      if ulen=0 then
+        exit('');
       slen:=UnicodeToUtf8(nil,high(SizeUInt),@us[1],ulen);
       { The conversion count includes the terminating zero, unlike string length. }
       SetLength(Result,slen-1);
@@ -659,12 +664,13 @@ begin
           usl:=LowerUnicodeString(us);
           for k:=1 to Length(usl) do
             begin
-              aalen:=getascii(tunicodechar(us[k]),locMap,@aa[Low(aa)],Length(aa));
+              aalen:=getascii(tunicodechar(usl[k]),locMap,@aa[Low(aa)],Length(aa));
               for ai:=0 to aalen-1 do
                 ConcatCharToAnsiStr(aa[ai],result,resindex);
             end;
         end;
       Inc(p,mblen);
+      Inc(i,mblen);
     end;
   SetLength(result,resindex-1);
 end;

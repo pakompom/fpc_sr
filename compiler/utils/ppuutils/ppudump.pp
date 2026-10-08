@@ -2514,7 +2514,11 @@ const
          'm_implicit_function_specialization', { attempt to specialize generic function by inferring types from parameters }
          'm_function_references', { enable Delphi-style function references }
          'm_anonymous_functions',  { enable Delphi-style anonymous functions }
-         'm_multiline_strings'    { multi-line strings denoted with '`' are enabled and valid }
+         'm_multiline_strings',    { multi-line strings denoted with '`' are enabled and valid }
+         'm_statement_expressions', { enables expressions using statements like if, case, try }
+         'm_reordered_operators',  { reordered operators, e.g. "a is not b", "a not in b" }
+         'm_type_inquiry',         { the compile time operator "type of <operand>" }
+         'm_record_composition'    { enables record composition }
        );
        { optimizer }
        optimizerswitchname : array[toptimizerswitch] of string[50] =
@@ -3341,7 +3345,8 @@ const
      (mask:oo_is_funcref;         str:'IsFuncRef'),
      (mask:oo_is_invokable;       str:'IsInvokable'),
      (mask:oo_is_capturer;        str:'IsCapturer'),
-     (mask:oo_inherits_not_specialized; str:'InheritedNotSpecialized')
+     (mask:oo_inherits_not_specialized; str:'InheritedNotSpecialized'),
+     (mask:oo_composites_generic; str:'CompositesGeneric')
   );
 var
   i      : longint;

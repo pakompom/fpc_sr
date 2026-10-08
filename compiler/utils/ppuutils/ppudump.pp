@@ -2454,7 +2454,8 @@ const
         'i8086 huge pointer comparison', {cs_hugeptr_comparison_normalization}
         'enforce legacy ifend behaviour', {cs_legacyifend}
         'hardware PC24 arithmetic', {cs_legacy_pc24}
-        'Delphi expression evaluation order' {cs_delphi_order}
+        'Delphi expression evaluation order', {cs_delphi_order}
+        'Delphi 32-bit integer arithmetic' {cs_delphi_integer32}
        );
        { Switches which can be changed by a mode (fpc,tp7,delphi) }
        modeswitchname : array[tmodeswitch] of string[50] =

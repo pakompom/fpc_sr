@@ -62,6 +62,7 @@ type
     procedure TestCycle32_ChangeC_CRC; // prog->ant->bird->cat, bird.impl->ant, cat.impl->bird+ant, change cat crc
     procedure TestBug41457; // two cycles of size 2 and 3
     procedure TestPrgNameClash1; // prg name clash with unit
+    procedure TestReloadClass; // loaded class parameters and inline bodies after dependency reload
 
     // -Ur Generate release unit files (never automatically recompile ppu)
     procedure TestUr_ignoreinclude1; // ant->bird, change bird.inc
@@ -605,6 +606,33 @@ begin
   Compile;
   // the main src is always compiled, bird changed same crc, so ant is kept
   CheckCompiled(['cycle2_changeb_prg.pas','cycle2_changeb_bird.pas']);
+end;
+
+procedure TTestRecompile.TestReloadClass;
+// child->base, base.impl->control, control->base+child. Changing control's
+// interface recompiles base after child.ppu has already resolved TBase.
+var
+  Dir: String;
+begin
+  Dir:='reloadclass';
+  UnitPath:=Dir+';'+Dir+PathDelim+'src1';
+  OutDir:=Dir+PathDelim+'ppus';
+  MainSrc:=Dir+PathDelim+'reloadclass_prg.pas';
+  MakeDateDiffer(
+    Dir+PathDelim+'src1'+PathDelim+'reloadclass_control.pas',
+    Dir+PathDelim+'src2'+PathDelim+'reloadclass_control.pas');
+
+  Step:='First compile';
+  CleanOutputDir;
+  Compile;
+  CheckCompiled(['reloadclass_prg.pas','reloadclass_base.pas',
+    'reloadclass_child.pas','reloadclass_control.pas']);
+
+  Step:='Second compile';
+  UnitPath:=Dir+';'+Dir+PathDelim+'src2';
+  Compile;
+  // child's own CRC is unchanged, so reload its references without recompiling.
+  CheckCompiled(['reloadclass_prg.pas','reloadclass_base.pas','reloadclass_control.pas']);
 end;
 
 procedure TTestRecompile.TestCycle3_ChangeC;

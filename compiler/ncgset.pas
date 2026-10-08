@@ -97,9 +97,9 @@ implementation
       symconst,symdef,symsym,defutil,
       pass_2,tgobj,
       nbas,ncon,ncgflw,
-{$ifdef WASM}
+{$if defined(WASM) and not defined(LLVM)}
       hlcgcpu,aasmcpu,
-{$endif WASM}
+{$endif}
       ncgutil,hlcgobj;
 
 
@@ -517,7 +517,7 @@ implementation
                          ((tenumdef(left.resultdef).min < aint(tsetdef(right.resultdef).setbase)) or
                           (tenumdef(left.resultdef).max > aint(tsetdef(right.resultdef).setmax)))) then
                        begin
-{$ifdef WASM}
+{$if defined(WASM) and not defined(LLVM)}
                          needslabel := True;
 
                          thlcgwasm(hlcg).a_cmp_const_reg_stack(current_asmdata.CurrAsmList, opdef, OC_A, tsetdef(right.resultdef).setmax-tsetdef(right.resultdef).setbase, pleftreg);
@@ -527,7 +527,7 @@ implementation
 
                          hlcg.a_load_const_reg(current_asmdata.CurrAsmList, uopdef, 0, location.register);
                          current_asmdata.CurrAsmList.concat(taicpu.op_none(a_else));
-{$else WASM}
+{$else}
                          current_asmdata.getjumplabel(l);
                          current_asmdata.getjumplabel(l2);
                          needslabel := True;
@@ -538,7 +538,7 @@ implementation
                          hlcg.a_jmp_always(current_asmdata.CurrAsmList, l2);
 
                          hlcg.a_label(current_asmdata.CurrAsmList, l);
-{$endif WASM}
+{$endif}
                        end;
 
                      hlcg.a_bit_test_reg_loc_reg(current_asmdata.CurrAsmList,opdef,right.resultdef,uopdef,
@@ -546,11 +546,11 @@ implementation
 
                      if needslabel then
                        begin
-{$ifdef WASM}
+{$if defined(WASM) and not defined(LLVM)}
                          current_asmdata.CurrAsmList.concat(taicpu.op_none(a_end_if));
-{$else WASM}
+{$else}
                          hlcg.a_label(current_asmdata.CurrAsmList, l2);
-{$endif WASM}
+{$endif}
                        end
                    end;
 {$ifndef cpuhighleveltarget}

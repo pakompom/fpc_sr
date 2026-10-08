@@ -152,6 +152,13 @@ function do_isdevice(handle:thandle):boolean;forward;
                     Include processor specific routines
 ****************************************************************************}
 
+{$if defined(CPULLVM) and defined(UNIX)}
+{ LLVM needs to see the memory operations even when the remaining RTL uses
+  direct system calls instead of libc. Freestanding targets keep their own
+  primitives; WebAssembly uses its bulk-memory instructions. }
+{$i llvmgeneric.inc}
+{$endif}
+
 {$ifdef FPC_USE_LIBC}
 {$ifdef USE_CPU_MOVE}
   { Avoid use of generic C code for move procedure }

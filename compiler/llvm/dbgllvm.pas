@@ -117,7 +117,7 @@ interface
         procedure appenddef_array(list:TAsmList;def:tarraydef);override;
         procedure appenddef_record_named(list: TAsmList; fordef: tdef; def: trecorddef; const name: TSymStr);
         procedure appenddef_struct_named(list: TAsmList; def: tabstractrecorddef; structdi: tai_llvmspecialisedmetadatanode; initialfieldlist: tai_llvmunnamedmetadatanode; const name: TSymStr);
-        procedure appenddef_struct_fields(list: TAsmlist; def: tabstractrecorddef; defdinode: tai_llvmspecialisedmetadatanode; initialfieldlist: tai_llvmunnamedmetadatanode; cappedsize: asizeuint);
+        procedure appenddef_struct_fields(list: TAsmlist; def: tabstractrecorddef; defdinode: tai_llvmspecialisedmetadatanode; initialfieldlist: tai_llvmunnamedmetadatanode; cappedsize: qword);
         procedure appenddef_record(list:TAsmList;def:trecorddef);override;
         procedure appenddef_pointer(list:TAsmList;def:tpointerdef);override;
         procedure appenddef_formal(list:TAsmList;def:tformaldef); override;
@@ -1027,15 +1027,15 @@ implementation
         if is_vector(def) then
           dinode.addenum('flags','DIFlagVector');
         if not is_dynamic_array(def) then
-{$ifdef cpu64bitalu}
+{$ifdef cpu64bitaddr}
           if def.size>=(qword(1) shl 61) then
             { LLVM internally "only" supports sizes up to 1 shl 61, because they
               store all sizes in bits in a qword; the rationale is that there
               is no hardware supporting a full 64 bit address space either }
             dinode.addqword('size',((qword(1) shl 61) - 1)*8)
           else
-{$endif def cpu64bitalu}
-            dinode.addqword('size',def.size*8)
+{$endif cpu64bitaddr}
+            dinode.addqword('size',qword(def.size)*8)
         else
           begin
             exprnode:=tai_llvmspecialisedmetadatanode.create(tspecialisedmetadatanodekind.DIExpression);
@@ -1069,7 +1069,8 @@ implementation
 
     procedure TDebugInfoLLVM.appenddef_struct_named(list: TAsmList; def: tabstractrecorddef; structdi: tai_llvmspecialisedmetadatanode; initialfieldlist: tai_llvmunnamedmetadatanode; const name: TSymStr);
       var
-        cappedsize: asizeuint;
+        { Debug sizes are in bits and may exceed the target address width. }
+        cappedsize: qword;
       begin
         if (name<>'') then
           structdi.addstring('name',name);
@@ -1077,15 +1078,15 @@ implementation
           try_add_file_metaref(structdi,def.typesym.fileinfo,false);
         if is_packed_record_or_object(def) then
           cappedsize:=tabstractrecordsymtable(def.symtable).datasize
-{$ifdef cpu64bitalu}
+{$ifdef cpu64bitaddr}
         else if def.size>=(qword(1) shl 61) then
           { LLVM internally "only" supports sizes up to 1 shl 61, because they
             store all sizes in bits in a qword; the rationale is that there
             is no hardware supporting a full 64 bit address space either }
           cappedsize:=((qword(1) shl 61) - 1)*8
-{$endif def cpu64bitalu}
+{$endif cpu64bitaddr}
         else
-          cappedsize:=tabstractrecordsymtable(def.symtable).datasize*8;
+          cappedsize:=qword(tabstractrecordsymtable(def.symtable).datasize)*8;
         structdi.addqword('size',cappedsize);
 
         appenddef_struct_fields(list,def,structdi,initialfieldlist,cappedsize);
@@ -1093,7 +1094,7 @@ implementation
       end;
 
 
-    procedure TDebugInfoLLVM.appenddef_struct_fields(list: TAsmlist; def: tabstractrecorddef; defdinode: tai_llvmspecialisedmetadatanode; initialfieldlist: tai_llvmunnamedmetadatanode; cappedsize: asizeuint);
+    procedure TDebugInfoLLVM.appenddef_struct_fields(list: TAsmlist; def: tabstractrecorddef; defdinode: tai_llvmspecialisedmetadatanode; initialfieldlist: tai_llvmunnamedmetadatanode; cappedsize: qword);
 
       { returns whether we need to create a nested struct in the variant to hold
         multiple successive fields, or whether the next field starts at the
@@ -1145,7 +1146,7 @@ implementation
         end;
         pvariantinfo = ^tvariantinfo;
 
-      function bitoffsetfromvariantstart(field: tfieldvarsym; variantinfolist: tfplist; totalbitsize: ASizeUInt): qword;
+      function bitoffsetfromvariantstart(field: tfieldvarsym; variantinfolist: tfplist; totalbitsize: qword): qword;
         var
           variantstartfield: tfieldvarsym;
         begin
@@ -1312,7 +1313,7 @@ implementation
                is_ordinal(field.vardef) then
               fielddi.addqword('size',field.getpackedbitsize)
             else
-              fielddi.addqword('size',min(asizeuint(field.getsize)*8,cappedsize));
+              fielddi.addqword('size',min(qword(field.getsize)*8,cappedsize));
             bitoffset:=bitoffsetfromvariantstart(field,variantinfolist,cappedsize);
             if bitoffset<>0 then
               fielddi.addqword('offset',bitoffset);

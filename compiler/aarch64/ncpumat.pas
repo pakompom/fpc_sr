@@ -277,9 +277,11 @@ implementation
                         else
                           begin
                             largerresreg := newreg(getregtype(resultreg), getsupreg(resultreg), R_SUBWHOLE);
-                            largernumreg := newreg(getregtype(numerator), getsupreg(numerator), R_SUBWHOLE);
-                            current_asmdata.CurrAsmList.concat(taicpu.op_reg_reg_reg(A_MUL,largerresreg,largerresreg,largernumreg));
-                            expandword := True; { Merge the shift operation with something below }
+                            { W-register writes zero the upper half. Multiply
+                              the signed 32-bit operands explicitly, then use
+                              the high word for the normal signed correction. }
+                            current_asmdata.CurrAsmList.concat(taicpu.op_reg_reg_reg(A_SMULL,largerresreg,resultreg,numerator));
+                            current_asmdata.CurrAsmList.concat(taicpu.op_reg_reg_const(A_ASR,largerresreg,largerresreg,32));
                           end;
 
                         { Store divisor for later (and executed at the same time as the multiplication) }

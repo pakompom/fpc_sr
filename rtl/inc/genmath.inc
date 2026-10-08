@@ -412,10 +412,11 @@ end;
         N := N+i;
         if N>$7FE then  { overflow }
         begin
+          { huge is 1e300: doubling it is still finite in binary64. }
           if x>0.0 then
-            ldexp := 2.0*huge
+            ldexp := huge*huge
           else
-            ldexp := (-2.0)*huge;
+            ldexp := (-huge)*huge;
         end
         else if N<1 then
         begin

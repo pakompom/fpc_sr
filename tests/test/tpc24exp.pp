@@ -97,7 +97,10 @@ begin
     $3FF6A09E80000000, 25);
   B.Bits := QWord($3FD62E4315287CEE);
   Check(Evaluate(B.Value), $3FF6A09E60000000, 26);
-  Check(Ordinary(1), $4005BF0A8B145769, 27);
+  { Ordinary Exp uses the platform's math implementation, whose last bit can
+    differ. It must retain Double precision rather than receive PC24 rounding. }
+  if Abs(Ordinary(1)-2.7182818284590452354)>1e-15 then Halt(27);
+  Check(Evaluate(710), $7FF0000000000000, 28);
 end.
 {$else}
 program tpc24exp;

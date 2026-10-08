@@ -313,7 +313,7 @@ const
     function taddnode.lower_delphi_order: tnode;
       var
         source_demand: word;
-        source_extended: boolean;
+        source_extended,firstleft: boolean;
         sequence: tnode;
         statements: tstatementnode;
         op: taddnode;
@@ -322,16 +322,41 @@ const
         if not(cs_delphi_order in localswitches) or
            (anf_delphi_ordered in addnodeflags) or
            (anf_pc24_lowered in addnodeflags) or
-           not(nodetype in [addn,subn,muln,slashn,ltn,lten,gtn,gten,equaln,unequaln]) or
-           not(is_fpu(left.resultdef) and is_fpu(right.resultdef)) then
+           not(nodetype in [addn,subn,muln,slashn,andn,orn,xorn,
+             ltn,lten,gtn,gten,equaln,unequaln]) then
+          exit;
+        if is_fpu(left.resultdef) and is_fpu(right.resultdef) then
+          firstleft:=delphi_left_first(left,right)
+        else if is_integer(left.resultdef) and is_integer(right.resultdef) then
+          begin
+            { Delphi 2007 $O- does not assign source locals to registers. Ordinary
+              integer arithmetic and comparisons therefore use the full
+              demand masks, with the left operand winning ties. Do not use
+              the floating low-bit/Extended comparator for these nodes.
+              Int64 helpers and subtraction have separate fixed schedules:
+              multiplication/division/modulo push the RHS first, while
+              subtraction always evaluates the LHS first. }
+            if (left.resultdef.size=8) or (right.resultdef.size=8) then
+              case nodetype of
+                muln: firstleft:=false;
+                subn: firstleft:=true;
+                else firstleft:=delphi_source_demand(left)>=delphi_source_demand(right);
+              end
+            else
+              firstleft:=delphi_source_demand(left)>=delphi_source_demand(right);
+          end
+        else
+          { In particular, Boolean AND/OR must retain short-circuit regions. }
           exit;
         source_demand:=delphi_source_demand(self);
         source_extended:=delphi_source_extended(self);
-        sequence:=delphi_capture_first(left,right,delphi_left_first(left,right),
+        sequence:=delphi_capture_first(left,right,firstleft,
           cs_legacy_pc24 in localswitches,statements);
         if not assigned(sequence) then exit;
         op:=caddnode.create(nodetype,left,right);
         op.localswitches:=localswitches;
+        op.flags:=flags;
+        op.delphi_ordered:=true;
         op.addnodeflags:=addnodeflags+[anf_delphi_ordered];
         delphi_set_source_order(op,source_demand,source_extended);
         left:=nil;

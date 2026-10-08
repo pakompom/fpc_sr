@@ -314,6 +314,8 @@ interface
          { Source evaluation properties before expression lowering. }
          delphi_demand: word;
          delphi_demand_valid,delphi_extended,delphi_calllike: boolean;
+         { Source operands/destination have been prepared in Delphi order. }
+         delphi_ordered: boolean;
          verbosity     : longint;
          optinfo : poptinfo;
          constructor create(t:tnodetype);
@@ -789,7 +791,8 @@ implementation
       end;
 
     constructor tnode.ppuload(t:tnodetype;ppufile:tcompilerppufile);
-
+      var
+        source_order_flags: byte;
       begin
         nodetype:=t;
         { tnode fields }
@@ -800,7 +803,9 @@ implementation
         ppufile.getderef(resultdefderef);
         ppufile.getset(tppuset2(flags));
         delphi_demand:=ppufile.getword;
-        delphi_demand_valid:=ppufile.getbyte<>0;
+        source_order_flags:=ppufile.getbyte;
+        delphi_demand_valid:=(source_order_flags and 1)<>0;
+        delphi_ordered:=(source_order_flags and 2)<>0;
         delphi_extended:=ppufile.getbyte<>0;
         delphi_calllike:=ppufile.getbyte<>0;
         { updated by firstpass }
@@ -819,7 +824,7 @@ implementation
         ppufile.putderef(resultdefderef);
         ppufile.putset(tppuset2(flags));
         ppufile.putword(delphi_demand);
-        ppufile.putbyte(ord(delphi_demand_valid));
+        ppufile.putbyte(ord(delphi_demand_valid) or (ord(delphi_ordered) shl 1));
         ppufile.putbyte(ord(delphi_extended));
         ppufile.putbyte(ord(delphi_calllike));
       end;
@@ -1067,6 +1072,7 @@ implementation
          p.localswitches:=localswitches;
          p.delphi_demand:=delphi_demand;
          p.delphi_demand_valid:=delphi_demand_valid;
+         p.delphi_ordered:=delphi_ordered;
          p.delphi_extended:=delphi_extended;
          p.delphi_calllike:=delphi_calllike;
          p.verbosity:=verbosity;

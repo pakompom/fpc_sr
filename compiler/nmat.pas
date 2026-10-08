@@ -110,13 +110,54 @@ implementation
     uses
       systems,
       verbose,globals,cutils,compinnr,
-      globtype,constexp,
+      globtype,constexp,delphiorder,
       symconst,symdef,symcpu,
       defcmp,defutil,
       htypechk,pass_1,
       cgbase,
       ncon,ncnv,ncal,nadd,nld,nbas,nflw,ninl,
       nutils,ppu;
+
+    function delphi_order_math(p: tbinopnode; firstleft: boolean): tnode;
+      var
+        first: pnode;
+        statements: tstatementnode;
+        temp: ttempcreatenode;
+        op: tbinopnode;
+        demand: word;
+      begin
+        result:=nil;
+        if not(cs_delphi_order in p.localswitches) or
+           p.delphi_ordered or
+           not(is_integer(p.left.resultdef) and is_integer(p.right.resultdef)) or
+           not(might_have_sideeffects(p.left) or might_have_sideeffects(p.right)) then
+          exit;
+        if firstleft then first:=@p.left else first:=@p.right;
+        if is_constnode(first^) then exit;
+        demand:=delphi_source_demand(p);
+        result:=internalstatements(statements);
+        temp:=ctempcreatenode.create(first^.resultdef,first^.resultdef.size,tt_persistent,true);
+        addstatement(statements,temp);
+        addstatement(statements,cassignmentnode.create(ctemprefnode.create(temp),first^));
+        first^:=ctemprefnode.create(temp);
+        if p.nodetype in [divn,modn] then
+          begin
+            op:=cmoddivnode.create(p.nodetype,p.left,p.right);
+            tmoddivnode(op).moddivnodeflags:=tmoddivnode(p).moddivnodeflags;
+          end
+        else
+          op:=cshlshrnode.create(p.nodetype,p.left,p.right);
+        op.localswitches:=p.localswitches;
+        op.flags:=p.flags;
+        op.delphi_ordered:=true;
+        p.left:=nil;
+        p.right:=nil;
+        delphi_set_source_order(op,demand,false);
+        addstatement(statements,ctempdeletenode.create_normal_temp(temp));
+        addstatement(statements,op);
+        result.localswitches:=p.localswitches;
+        delphi_set_source_order(result,demand,false);
+      end;
 
 {****************************************************************************
                               TMODDIVNODE
@@ -456,6 +497,16 @@ implementation
               if not(ld.ordtype in [torddef(sinttype).ordtype,torddef(uinttype).ordtype]) then
                 inserttypeconv(left,sinttype);
               resultdef:=right.resultdef;
+           end;
+
+         { Delphi 2007 scalar division/modulo evaluates the greater demand first,
+           ties left. Its Int64 helper always pushes the RHS first. }
+         if cs_delphi_order in localswitches then
+           begin
+             result:=delphi_order_math(self,(resultdef.size<>8) and
+               (delphi_source_demand(left)>=delphi_source_demand(right)));
+             if assigned(result) then
+               exit;
            end;
 
          result:=simplify(false);
@@ -894,6 +945,7 @@ implementation
     function tshlshrnode.pass_typecheck:tnode;
       var
          t : tnode;
+         count_demand: word;
       begin
          result:=nil;
          typecheckpass(left);
@@ -967,9 +1019,14 @@ implementation
                    end
                end;
 
+             if cs_delphi_order in localswitches then
+               count_demand:=delphi_source_demand(right)
+             else
+               count_demand:=0;
              inserttypeconv(right,sinttype);
              if (cs_delphi_integer32 in localswitches) and
-                is_integer(left.resultdef) then
+                is_integer(left.resultdef) and
+                not delphi_ordered then
                begin
                  { Delphi masks the count by the operand width. In particular,
                    LLVM shifts by that width or more are otherwise undefined. }
@@ -977,9 +1034,30 @@ implementation
                    cordconstnode.create(left.resultdef.size*8-1,sinttype,false));
                  typecheckpass(right);
                end;
+             { This count mask is an FPC lowering detail, not source demand. }
+             if cs_delphi_order in localswitches then
+               delphi_set_source_order(right,count_demand,false);
            end;
 
          resultdef:=left.resultdef;
+
+         if (cs_delphi_order in localswitches) and
+            is_integer(left.resultdef) and is_integer(right.resultdef) and
+            not is_constnode(right) then
+           begin
+             { These branches are invariant under Delphi 2007's free-register mask.
+               A 32-bit value that clobbers ECX must be prepared before the
+               count; an Int64 count needing EAX/EDX cannot be prepared after
+               reserving the value pair. Other variable-shift cases also
+               depend on the enclosing expression's free registers. }
+             if (resultdef.size<=4) and
+                ((delphi_source_demand(left) and $1000)<>0) then
+               result:=delphi_order_math(self,true)
+             else if (resultdef.size=8) and
+                ((delphi_source_demand(right) and $c00)<>0) then
+               result:=delphi_order_math(self,false);
+             if assigned(result) then exit;
+           end;
 
          result:=simplify(false);
          if assigned(result) then

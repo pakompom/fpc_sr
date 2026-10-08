@@ -299,6 +299,13 @@ implementation
          if def_to.typ=objectdef then
            def_to:=find_real_class_definition(tobjectdef(def_to),false);
 
+         { Source-only Extended aliases retain the exact identity of their
+           target type, including overload ranking and var parameters. }
+         if (df_source_extended in def_from.defoptions) and assigned(def_from.typesym) then
+           def_from:=ttypesym(def_from.typesym).typedef;
+         if (df_source_extended in def_to.defoptions) and assigned(def_to.typesym) then
+           def_to:=ttypesym(def_to.typesym).typedef;
+
          { same def? then we've an exact match }
          if def_from=def_to then
           begin

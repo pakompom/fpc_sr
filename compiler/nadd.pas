@@ -2112,11 +2112,18 @@ const
           not (tinlinenode(lefttarget).left.resultdef.typ in [undefineddef,errordef]) and
           not (tinlinenode(righttarget).left.resultdef.typ in [undefineddef,errordef]) then
           begin
+            ld:=tinlinenode(lefttarget).left.resultdef;
+            rd:=tinlinenode(righttarget).left.resultdef;
+            { Source-only aliases retain the target type's RTTI identity. }
+            if (df_source_extended in ld.defoptions) and assigned(ld.typesym) then
+              ld:=ttypesym(ld.typesym).typedef;
+            if (df_source_extended in rd.defoptions) and assigned(rd.typesym) then
+              rd:=ttypesym(rd.typesym).typedef;
             case nodetype of
               equaln:
-                result:=cordconstnode.create(ord(tinlinenode(lefttarget).left.resultdef=tinlinenode(righttarget).left.resultdef),resultdef,false);
+                result:=cordconstnode.create(ord(ld=rd),resultdef,false);
               unequaln:
-                result:=cordconstnode.create(ord(tinlinenode(lefttarget).left.resultdef<>tinlinenode(righttarget).left.resultdef),resultdef,false);
+                result:=cordconstnode.create(ord(ld<>rd),resultdef,false);
               else
                 Internalerror(2020092901);
             end;

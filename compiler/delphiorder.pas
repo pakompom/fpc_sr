@@ -153,7 +153,8 @@ begin
   result:=is_fpu(p.resultdef) and
     ((p.nodetype in [addn,subn,muln,slashn]) or
      ((p.nodetype=realconstn) and not(nf_explicit in p.flags)) or
-     (tfloatdef(p.resultdef).floattype in [s80real,sc80real]));
+     (tfloatdef(p.resultdef).floattype in [s80real,sc80real]) or
+     (df_source_extended in p.resultdef.defoptions));
 end;
 
 function delphi_source_demand(p: tnode): word;
@@ -283,7 +284,21 @@ begin
         a:=delphi_source_demand(tbinarynode(p).left);
         b:=delphi_source_demand(tbinarynode(p).right);
         if is_fpu(p.resultdef) and (p.nodetype in [addn,subn,muln,slashn]) then
-          exit(a or b or ((b+1) and 3));
+          begin
+            { Delphi 2007 prepares real multiply/divide operands through
+              conversions even when they already are Extended. They add
+              integer and FPU demand to the completed expression, although
+              real arithmetic strips them when choosing its own operand
+              order. Constant conversions fold before this preparation. }
+            if p.nodetype in [muln,slashn] then
+              begin
+                if not is_constnode(tbinarynode(p).left) then
+                  a:=a or $41;
+                if not is_constnode(tbinarynode(p).right) then
+                  b:=b or $41;
+              end;
+            exit(a or b or ((b+1) and 3));
+          end;
         if ((is_integer(p.resultdef) and (p.resultdef.size=8)) or
             ((p.nodetype in [equaln,unequaln,ltn,lten,gtn,gten]) and
              is_integer(tbinarynode(p).left.resultdef) and

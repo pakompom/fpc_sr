@@ -2660,6 +2660,10 @@ implementation
         rttidef: tdef;
         s: TIDString;
       begin
+        { Source-only floating aliases share a table with their target type,
+          just as their RTTI references share its label. }
+        if (df_source_extended in def.defoptions) and assigned(def.typesym) then
+          def:=ttypesym(def.typesym).typedef;
         { Objective-C has its own RTTI system }
         if is_objc_class_or_protocol(def) then
           exit;

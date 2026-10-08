@@ -665,6 +665,7 @@ interface
           constructor create(t: tfloattype; doregister: boolean);virtual;
           constructor ppuload(ppufile:tcompilerppufile);
           function getcopy : tstoreddef;override;
+          function rtti_mangledname(rt:trttitype):TSymStr;override;
           { do not override this routine in platform-specific subclasses,
             override ppuwrite_platform instead }
           procedure ppuwrite(ppufile:tcompilerppufile);override;final;
@@ -3696,6 +3697,22 @@ implementation
          result:=cfloatdef.create(floattype,true);
          result.typ:=floatdef;
          tfloatdef(result).savesize:=savesize;
+         if df_source_extended in defoptions then
+           include(result.defoptions,df_source_extended);
+      end;
+
+
+    function tfloatdef.rtti_mangledname(rt:trttitype):TSymStr;
+      begin
+        { A source-only alias shares its ordinary target type's RTTI. In
+          particular, Extended and Double remain identical on targets where
+          they have the same representation. A distinct "type Extended"
+          declaration gets its own typesym and retains its separate RTTI. }
+        if (df_source_extended in defoptions) and assigned(typesym) and
+           (ttypesym(typesym).typedef<>self) then
+          result:=tstoreddef(ttypesym(typesym).typedef).rtti_mangledname(rt)
+        else
+          result:=inherited rtti_mangledname(rt);
       end;
 
 

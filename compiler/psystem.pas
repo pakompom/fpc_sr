@@ -261,6 +261,7 @@ implementation
 
       var
         hrecst : trecordsymtable;
+        extendedtype : tfloatdef;
 	pvmt_name : shortstring;
       begin
         symtablestack.push(systemunit);
@@ -478,8 +479,18 @@ implementation
           begin
             addtype('Single',s32floattype);
             addtype('Double',s64floattype);
-            { extended size is the best real type for the target }
-            addtype('Extended',pbestrealtype^);
+            { Preserve the source spelling for Delphi operand scheduling
+              without changing the target representation or type identity.
+              The flag is stored in PPUs and follows type aliases/copies. }
+            if tfloatdef(pbestrealtype^).floattype in [s80real,sc80real] then
+              addtype('Extended',pbestrealtype^)
+            else
+              begin
+                extendedtype:=tfloatdef(tstoreddef(pbestrealtype^).getcopy);
+                include(extendedtype.defoptions,df_source_extended);
+                extendedtype.typesym:=pbestrealtype^.typesym;
+                addtype('Extended',extendedtype);
+              end;
             { CExtended corresponds to the C version of the Extended type
               (either "long double" or "double") }
             if target_info.system in systems_android then

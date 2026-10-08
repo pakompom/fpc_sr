@@ -324,7 +324,7 @@ interface
 implementation
 
    uses
-      globtype,systems,constexp,compinnr,pc24const,
+      globtype,systems,constexp,compinnr,pc24const,delphiorder,
       cutils,verbose,globals,widestr,ppu,
       symconst,symdef,symsym,symcpu,symtable,
       ncon,ncal,nset,nadd,nmem,nmat,nbas,nutils,ninl,nflw,
@@ -338,6 +338,18 @@ implementation
 *****************************************************************************}
     type
       ttypeconvnodetype = (tct_implicit,tct_explicit,tct_internal);
+
+    procedure preserve_delphi_source_type(p:tnode; destination:tdef);
+      begin
+        { Equal target float types can still have different source scheduling
+          classes. Save that class before removing a no-op conversion. }
+        if (cs_delphi_order in p.localswitches) and
+           is_fpu(p.resultdef) and is_fpu(destination) and
+           ((df_source_extended in p.resultdef.defoptions)<>
+            (df_source_extended in destination.defoptions)) then
+          delphi_set_source_order(p,delphi_source_demand(p),
+            delphi_source_extended(p),delphi_prefix_capturable(p));
+      end;
 
     function remove_pc24_widening(var p:tnode; destination:tdef):boolean;
       var
@@ -407,6 +419,7 @@ implementation
            ((p.blocktype=bt_const) or
             not ctypeconvnode.target_specific_need_equal_typeconv(p.resultdef,def)) then
           begin
+            preserve_delphi_source_type(p,def);
             { don't replace encoded string constants to rawbytestring encoding.
               preserve the codepage }
             if not (is_rawbytestring(def) and (p.nodetype=stringconstn)) then
@@ -3005,6 +3018,7 @@ implementation
               te_exact,
               te_equal :
                 begin
+                  preserve_delphi_source_type(left,resultdef);
                   result := simplify(false);
                   if assigned(result) then
                     exit;

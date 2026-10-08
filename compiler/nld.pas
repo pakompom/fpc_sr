@@ -1685,6 +1685,10 @@ implementation
     constructor trttinode.create(def:tstoreddef;rt:trttitype;dt:Trttidatatype);
       begin
          inherited create(rttin);
+         { Source-only aliases must share RTTI identity during constant
+           folding as well as when referring to the emitted table. }
+         if (df_source_extended in def.defoptions) and assigned(def.typesym) then
+           def:=tstoreddef(ttypesym(def.typesym).typedef);
          rttidef:=def;
          rttitype:=rt;
          rttidatatype:=dt;

@@ -384,22 +384,30 @@ end;
 { Native binary80 operands cannot be narrowed to Double before an operation.
   Keep the complete operation inside one assembler routine so the compiler
   cannot move arithmetic across the precision-control changes. These routines
-  preserve the caller's rounding mode and restore its original control word. }
+  preserve the caller's rounding mode and restore its original control word.
+  When PC24 is already selected, avoid the serializing control-word loads;
+  keep the arithmetic and FWAIT unchanged, including unmasked exceptions. }
 {$asmmode att}
 function fpc_pc24_add_extended(a,b: Extended): Extended; compilerproc; assembler;
 var
   oldcw, pc24cw: Word;
 asm
   fnstcw oldcw
+  testw $0x0300,oldcw
+  jz .Lcalculate
   movw oldcw,%ax
   andw $0xfcff,%ax
   movw %ax,pc24cw
   fldcw pc24cw
+.Lcalculate:
   fldt a
   fldt b
   faddp %st,%st(1)
   fwait
+  testw $0x0300,oldcw
+  jz .Ldone
   fldcw oldcw
+.Ldone:
 end;
 
 function fpc_pc24_sub_extended(a,b: Extended): Extended; compilerproc; assembler;
@@ -407,15 +415,21 @@ var
   oldcw, pc24cw: Word;
 asm
   fnstcw oldcw
+  testw $0x0300,oldcw
+  jz .Lcalculate
   movw oldcw,%ax
   andw $0xfcff,%ax
   movw %ax,pc24cw
   fldcw pc24cw
+.Lcalculate:
   fldt a
   fldt b
   fsubrp %st,%st(1)
   fwait
+  testw $0x0300,oldcw
+  jz .Ldone
   fldcw oldcw
+.Ldone:
 end;
 
 function fpc_pc24_mul_extended(a,b: Extended): Extended; compilerproc; assembler;
@@ -423,15 +437,21 @@ var
   oldcw, pc24cw: Word;
 asm
   fnstcw oldcw
+  testw $0x0300,oldcw
+  jz .Lcalculate
   movw oldcw,%ax
   andw $0xfcff,%ax
   movw %ax,pc24cw
   fldcw pc24cw
+.Lcalculate:
   fldt a
   fldt b
   fmulp %st,%st(1)
   fwait
+  testw $0x0300,oldcw
+  jz .Ldone
   fldcw oldcw
+.Ldone:
 end;
 
 function fpc_pc24_div_extended(a,b: Extended): Extended; compilerproc; assembler;
@@ -439,15 +459,21 @@ var
   oldcw, pc24cw: Word;
 asm
   fnstcw oldcw
+  testw $0x0300,oldcw
+  jz .Lcalculate
   movw oldcw,%ax
   andw $0xfcff,%ax
   movw %ax,pc24cw
   fldcw pc24cw
+.Lcalculate:
   fldt a
   fldt b
   fdivrp %st,%st(1)
   fwait
+  testw $0x0300,oldcw
+  jz .Ldone
   fldcw oldcw
+.Ldone:
 end;
 
 function fpc_pc24_sqr_extended(a: Extended): Extended; compilerproc; assembler;
@@ -455,15 +481,21 @@ var
   oldcw, pc24cw: Word;
 asm
   fnstcw oldcw
+  testw $0x0300,oldcw
+  jz .Lcalculate
   movw oldcw,%ax
   andw $0xfcff,%ax
   movw %ax,pc24cw
   fldcw pc24cw
+.Lcalculate:
   fldt a
   fld %st
   fmulp %st,%st(1)
   fwait
+  testw $0x0300,oldcw
+  jz .Ldone
   fldcw oldcw
+.Ldone:
 end;
 
 function fpc_pc24_sqrt_extended(a: Extended): Extended; compilerproc; assembler;
@@ -471,14 +503,20 @@ var
   oldcw, pc24cw: Word;
 asm
   fnstcw oldcw
+  testw $0x0300,oldcw
+  jz .Lcalculate
   movw oldcw,%ax
   andw $0xfcff,%ax
   movw %ax,pc24cw
   fldcw pc24cw
+.Lcalculate:
   fldt a
   fsqrt
   fwait
+  testw $0x0300,oldcw
+  jz .Ldone
   fldcw oldcw
+.Ldone:
 end;
 
 function fpc_pc24_frac_extended(a: Extended): Extended; compilerproc; assembler;

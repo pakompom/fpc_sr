@@ -253,6 +253,16 @@ implementation
                 begin
                    opsize:=def_cgsize(p.resultdef);
                    case p.location.loc of
+                     LOC_CONSTANT:
+                       begin
+                         { An expression block can retain prefix statements
+                           while its final Boolean folds to a constant. Its
+                           location is constant even though the node is not. }
+                         if p.location.value<>0 then
+                           cg.a_jmp_always(list,truelabel)
+                         else
+                           cg.a_jmp_always(list,falselabel);
+                       end;
                      LOC_SUBSETREG,LOC_CSUBSETREG:
                        begin
                          if p.location.sreg.bitlen=1 then

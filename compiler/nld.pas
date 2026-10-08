@@ -94,6 +94,7 @@ interface
        tassignmentnode = class(tbinarynode)
          protected
           function direct_shortstring_assignment: boolean; virtual;
+          function lower_delphi_order: tnode;
          public
           assignmentnodeflags : TAssignmentNodeFlags;
           assigntype : tassigntype;
@@ -219,7 +220,7 @@ implementation
       htypechk,pass_1,procinfo,paramgr,
       nbas,ncon,nflw,ninl,ncnv,nmem,ncal,nutils,
       cgbase,
-      optloadmodifystore,wpobase
+      optloadmodifystore,wpobase,delphiorder
       ;
 
 
@@ -637,6 +638,83 @@ implementation
       end;
 
 
+    function tassignmentnode.lower_delphi_order: tnode;
+
+      function managed_destination(p: tnode): boolean;
+        begin
+          { Capturing a string/dynamic-array element's raw address does not
+            retain its owner or perform its copy-on-write preparation. Those
+            destinations need their own lifetime-aware lowering. }
+          result:=assigned(p.resultdef) and is_managed_type(p.resultdef);
+          if not result and (p is tunarynode) then
+            result:=assigned(tunarynode(p).left) and
+              managed_destination(tunarynode(p).left);
+        end;
+
+      var
+        statements: tstatementnode;
+        temp: ttempcreatenode;
+        initial: tnode;
+        assignment: tassignmentnode;
+        firstleft: boolean;
+      begin
+        result:=nil;
+        if not(cs_delphi_order in localswitches) or
+           delphi_ordered or
+           (assigntype<>at_normal) or
+           not(left.nodetype in [subscriptn,derefn,vecn,typeconvn]) or
+           not(is_ordinal(left.resultdef) or
+               (left.resultdef.typ in [pointerdef,classrefdef]) or
+               is_class(left.resultdef)) or
+           { Delphi 2007 has separate real, Int64, method-pointer and aggregate
+             assignment paths. Pointer/class source values are Delphi32
+             scalars even when the target has eight-byte pointers. }
+           (is_ordinal(left.resultdef) and (left.resultdef.size>4)) or
+           managed_destination(left) or
+           not valid_for_var(left,false) or
+           not(might_have_sideeffects(left) or might_have_sideeffects(right)) then
+          exit;
+
+        { Delphi 2007 ordinary scalar memory assignments prepare the RHS
+          first when source demands are equal.
+          A constant RHS has no evaluation to preserve. Register-local and
+          direct-symbol destinations above have no competing address work. }
+        if is_constnode(right) then
+          exit;
+        firstleft:=delphi_source_demand(left)>delphi_source_demand(right);
+        if firstleft then
+          begin
+            initial:=caddrnode.create_internal(left);
+            include(taddrnode(initial).addrnodeflags,anf_typedaddr);
+            typecheckpass(initial);
+          end
+        else
+          initial:=right;
+
+        result:=internalstatements(statements);
+        result.localswitches:=localswitches;
+        temp:=ctempcreatenode.create(initial.resultdef,initial.resultdef.size,
+          tt_persistent,true);
+        addstatement(statements,temp);
+        assignment:=cassignmentnode.create(ctemprefnode.create(temp),initial);
+        assignment.localswitches:=localswitches;
+        assignment.delphi_ordered:=true;
+        addstatement(statements,assignment);
+        if firstleft then
+          left:=cderefnode.create(ctemprefnode.create(temp))
+        else
+          right:=ctemprefnode.create(temp);
+        addstatement(statements,ctempdeletenode.create_normal_temp(temp));
+        assignment:=cassignmentnode.create(left,right);
+        assignment.localswitches:=localswitches;
+        assignment.flags:=flags;
+        assignment.delphi_ordered:=true;
+        addstatement(statements,assignment);
+        left:=nil;
+        right:=nil;
+      end;
+
+
     constructor tassignmentnode.create(l,r : tnode);
 
       begin
@@ -943,6 +1021,8 @@ implementation
         { check if local proc/func is assigned to procvar }
         if right.resultdef.typ=procvardef then
           test_local_to_procvar(tprocvardef(right.resultdef),left.resultdef);
+
+        result:=lower_delphi_order;
       end;
 
 

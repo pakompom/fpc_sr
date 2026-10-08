@@ -50,9 +50,14 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
   transcendental emulation, or wider exponents on targets without Extended.
   Constants and inline routines retain their defining unit's arithmetic mode.
 
-- `{$DELPHIORDER ON/OFF}` independently selects Delphi 2007 operand and argument
-  evaluation order. Source scheduling information survives lowering, inlining
-  and unit files; the target calling ABI is unchanged.
+- `{$DELPHIORDER ON/OFF}` independently reproduces Delphi 2007 source scheduling
+  rules for the game's original `{$O-}` build, while allowing FPC to optimize
+  the resulting code. It covers real and integer operands, call arguments,
+  ordinary scalar assignments and array indexing. Source scheduling information
+  survives lowering, inlining and unit files; the target calling ABI is unchanged.
+  It is not a complete Delphi 2007 scheduler: argument ties and some shifts still
+  depend on temporary x86 register availability, and general saved-inline,
+  managed-assignment and exception-only ordering need separate treatment.
 
 - `{$DELPHIINTEGER32 ON/OFF}` independently selects Delphi's 32-bit minimum
   integer arithmetic width. Explicit wider operands retain their width;

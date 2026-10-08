@@ -70,7 +70,7 @@ interface
 implementation
 
     uses
-      globtype,widestr,systems,
+      globtype,widestr,systems,pc24const,
       verbose,globals,cutils,
       aasmcnst,
       symconst,symdef,aasmtai,aasmdata,defutil,
@@ -97,6 +97,7 @@ implementation
       type
         tfloatkey = record
           value: bestreal;
+          binary80: tpc24binary80;
           typ: tfloattype;
           swapped: boolean;
         end;
@@ -106,6 +107,8 @@ implementation
          realait : tairealconsttype;
          entry : PHashSetItem;
          key: tfloatkey;
+         raw80: boolean;
+         bytes80: array[0..15] of byte;
 {$ifdef ARM}
          hiloswapped : boolean;
 {$endif ARM}
@@ -114,6 +117,9 @@ implementation
         location_reset_ref(location,LOC_CREFERENCE,def_cgsize(resultdef),const_align(resultdef.alignment),[]);
         lastlabel:=nil;
         realait:=floattype2ait[tfloatdef(resultdef).floattype];
+        raw80:=(realait=aitrealconst_s80bit) and pc24_value.valid and
+          (cs_legacy_pc24 in localswitches) and
+          (target_info.cpu in [systems.cpu_i386,systems.cpu_x86_64]);
 {$ifdef ARM}
         hiloswapped:=is_double_hilo_swapped;
 {$endif ARM}
@@ -122,7 +128,10 @@ implementation
           begin
             { there may be gap between record fields, zero it out }
             fillchar(key,sizeof(key),0);
-            key.value:=value_real;
+            if raw80 then
+              key.binary80:=pc24_to_binary80(pc24_value)
+            else
+              key.value:=value_real;
             key.typ:=tfloatdef(resultdef).floattype;
 {$ifdef ARM}
             key.swapped:=hiloswapped;
@@ -158,7 +167,17 @@ implementation
 
                     aitrealconst_s80bit :
                       begin
-                        current_asmdata.asmlists[al_typedconsts].concat(tai_realconst.create_s80real(value_real,tfloatdef(resultdef).size));
+                        if raw80 then
+                          begin
+                            { A cross compiler may have only Double as its host
+                              bestreal. Preserve literal tails and exponents. }
+                            fillchar(bytes80,sizeof(bytes80),0);
+                            move(key.binary80,bytes80,sizeof(key.binary80));
+                            current_asmdata.asmlists[al_typedconsts].concat(
+                              tai_string.create_data(@bytes80,resultdef.size,false));
+                          end
+                        else
+                          current_asmdata.asmlists[al_typedconsts].concat(tai_realconst.create_s80real(value_real,tfloatdef(resultdef).size));
                       end;
 {$ifdef cpufloat128}
                     aitrealconst_s128bit :

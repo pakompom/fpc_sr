@@ -739,6 +739,9 @@ function get_next_varsym(def: tabstractrecorddef; const SymList:TFPHashObjectLis
       var
         value : bestreal;
       begin
+        if is_constrealnode(node) and
+           trealconstnode(node).emit_pc24_binary80(ftcb,def) then
+          exit;
         value:=0.0;
         if is_constrealnode(node) then
           value:=trealconstnode(node).value_real

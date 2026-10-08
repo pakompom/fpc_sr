@@ -12,6 +12,8 @@ unit pc24const;
 interface
 
 type
+  tpc24binary80 = array[0..9] of byte;
+
   tpc24real = record
     valid, negative: boolean;
     significand: qword;
@@ -32,6 +34,7 @@ function pc24_from_int(v: int64): tpc24real;
 function pc24_from_uint(v: qword): tpc24real;
 function pc24_to_double(const r: tpc24real): double;
 function pc24_to_extended(const r: tpc24real): extended;
+function pc24_to_binary80(const r: tpc24real): tpc24binary80;
 function pc24_exact_double(const r: tpc24real): boolean;
 function pc24_exact_single(const r: tpc24real): boolean;
 function pc24_split(const r: tpc24real; out hi,lo: double): boolean;
@@ -506,32 +509,44 @@ begin
 end;
 {$endif}
 
-function pc24_to_extended(const r: tpc24real): extended;
-{$if sizeof(extended)=10}
-var bits: textendedbits; exponent: longint;
+function pc24_to_binary80(const r: tpc24real): tpc24binary80;
+var significand: qword; sign_exponent: word; exponent,i: longint;
 begin
-  fillchar(bits,sizeof(bits),0);
+  significand:=0;
+  sign_exponent:=0;
   if r.significand<>0 then
     begin
       exponent:=r.exponent+63+16383;
       if exponent>=$7fff then
         begin
-          bits.sign_exponent:=$7fff;
-          bits.significand:=qword(1) shl 63;
+          sign_exponent:=$7fff;
+          significand:=qword(1) shl 63;
         end
       else if exponent<=0 then
         begin
-          bits.significand:=uq(roundratio(bn(r.significand),shift(bn(1),1-exponent)));
-          if bits.significand>=qword(1) shl 63 then
-            bits.sign_exponent:=1;
+          significand:=uq(roundratio(bn(r.significand),shift(bn(1),1-exponent)));
+          if significand>=qword(1) shl 63 then
+            sign_exponent:=1;
         end
       else
         begin
-          bits.sign_exponent:=exponent;
-          bits.significand:=r.significand;
+          sign_exponent:=exponent;
+          significand:=r.significand;
         end;
     end;
-  if r.negative then bits.sign_exponent:=bits.sign_exponent or $8000;
+  if r.negative then sign_exponent:=sign_exponent or $8000;
+  { x87 storage is little-endian, independently of the compiler host. }
+  for i:=0 to 7 do
+    result[i]:=significand shr (i*8);
+  result[8]:=sign_exponent;
+  result[9]:=sign_exponent shr 8;
+end;
+
+function pc24_to_extended(const r: tpc24real): extended;
+{$if sizeof(extended)=10}
+var bits: tpc24binary80;
+begin
+  bits:=pc24_to_binary80(r);
   move(bits,result,sizeof(bits));
 end;
 {$else}

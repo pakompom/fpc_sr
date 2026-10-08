@@ -59,6 +59,7 @@ interface
           function docompare(p: tnode) : boolean; override;
           procedure printnodedata(var t:text);override;
           function emit_data(tcb:ttai_typedconstbuilder):sizeint; override;
+          function emit_pc24_binary80(tcb:ttai_typedconstbuilder; def:tdef):boolean;
 {$ifdef DEBUG_NODE_XML}
           procedure XMLPrintNodeData(var T: Text); override;
 {$endif DEBUG_NODE_XML}
@@ -658,8 +659,33 @@ implementation
           writeln(t);
       end;
 
+    function trealconstnode.emit_pc24_binary80(tcb:ttai_typedconstbuilder; def:tdef):boolean;
+{$ifndef llvm}
+      var
+        binary80: tpc24binary80;
+        bytes80: array[0..15] of byte;
+{$endif llvm}
+      begin
+{$ifndef llvm}
+        if is_extended(def) and pc24_value.valid and
+           (cs_legacy_pc24 in localswitches) and
+           (target_info.cpu in [systems.cpu_i386,systems.cpu_x86_64]) then
+          begin
+            { Typed constants must retain the same exact bits as literals. }
+            binary80:=pc24_to_binary80(pc24_value);
+            fillchar(bytes80,sizeof(bytes80),0);
+            move(binary80,bytes80,sizeof(binary80));
+            tcb.emit_tai(tai_string.create_data(@bytes80,def.size,false),def);
+            exit(true);
+          end;
+{$endif llvm}
+        result:=false;
+      end;
+
     function trealconstnode.emit_data(tcb:ttai_typedconstbuilder):sizeint;
       begin
+        if emit_pc24_binary80(tcb,typedef) then
+          exit(typedef.size);
         case tfloatdef(typedef).floattype of
           s32real:
             tcb.emit_tai(tai_realconst.create_s32real(value_real),typedef);

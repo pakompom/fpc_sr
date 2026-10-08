@@ -37,7 +37,7 @@ interface
 implementation
 
     uses
-      systems,globals,globtype,
+      systems,globals,globtype,pc24const,
       symdef,
       defutil,
       cpubase,
@@ -51,7 +51,10 @@ implementation
     function tx86realconstnode.pass_1 : tnode;
       begin
          result:=nil;
-         if is_number_float(value_real) and not(use_vectorfpu(resultdef)) and ((value_real=1.0) or (value_real=-1.0) or ((value_real=0.0) and (get_real_sign(value_real)=1)) or
+         if (cs_legacy_pc24 in localswitches) and pc24_value.valid and
+            not pc24_exact_double(pc24_value) then
+           expectloc:=LOC_CREFERENCE
+         else if is_number_float(value_real) and not(use_vectorfpu(resultdef)) and ((value_real=1.0) or (value_real=-1.0) or ((value_real=0.0) and (get_real_sign(value_real)=1)) or
            ((value_real=2.0) and (cs_create_pic in current_settings.moduleswitches))) then
            expectloc:=LOC_FPUREGISTER
          else if (value_real=0.0) and (get_real_sign(value_real)=1) and use_vectorfpu(resultdef) then
@@ -63,7 +66,12 @@ implementation
 
     procedure tx86realconstnode.pass_generate_code;
       begin
-         if is_number_float(value_real) then
+         if (cs_legacy_pc24 in localswitches) and pc24_value.valid and
+            not pc24_exact_double(pc24_value) then
+           { FLD1/FLDZ must not replace a literal that only rounds to 1/0
+             in the cross compiler's host floating-point type. }
+           inherited pass_generate_code
+         else if is_number_float(value_real) then
            begin
              if (value_real=1.0) and not(use_vectorfpu(resultdef)) then
                begin

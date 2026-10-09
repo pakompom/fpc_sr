@@ -444,16 +444,23 @@ begin
   if IsSharedLib then
     Replace(cmdstr,'$SONAME',ExtractFileName(outname));
 
-  { We should use BFD version of LD, since GOLD version does not support INSERT command in linker scripts }
-  s:=utilsprefix+binstr+'.bfd';
-  if (source_info.exeext<>'') then
-    s:=s+source_info.exeext;
-  s:=FindUtil(s,false);
-  if FileExists(s, True) then
-    binstr:=s
+  { Modern NDKs supply LLD. Honour -XLL before probing for BFD, since
+    FindUtil also searches PATH and may otherwise select the host linker. }
+  if cs_link_lld in current_settings.globalswitches then
+    binstr:=FindUtil(utilsprefix+'ld.lld')
   else
-    // fallback to ld for very old or custom binutils
-    binstr:=FindUtil(utilsprefix+BinStr);
+    begin
+      { Prefer BFD over GOLD, which does not support INSERT in linker scripts. }
+      s:=utilsprefix+binstr+'.bfd';
+      if (source_info.exeext<>'') then
+        s:=s+source_info.exeext;
+      s:=FindUtil(s,false);
+      if FileExists(s, True) then
+        binstr:=s
+      else
+        // fallback to ld for very old or custom binutils
+        binstr:=FindUtil(utilsprefix+BinStr);
+    end;
 
   success:=DoExec(binstr,CmdStr,true,false);
 

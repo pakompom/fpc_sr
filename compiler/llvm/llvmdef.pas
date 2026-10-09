@@ -277,14 +277,16 @@ implementation
       logicalname: TSymStr;
     begin
 {$ifdef wasm32}
-      { LLVM selects the scoped Wasm EH model by the IR personality name.
-        The no-mangle prefix would hide it from classifyEHPersonality. Wasm
-        has no C symbol prefix, so the object spelling remains identical. }
-      if s='__gxx_wasm_personality_v0' then
-        begin
-          result:='@__gxx_wasm_personality_v0';
-          exit;
-        end;
+      { Wasm has no target symbol prefix. Keep ordinary LLVM names so FPC
+        declarations and Clang definitions are the same globals during LTO:
+        a \01 prefix would make them distinct in IR even though the object
+        linker eventually gives them the same spelling. This also lets LLVM
+        recognize runtime functions and the Wasm EH personality by name. }
+      if (copy(s,1,length('llvm.'))='llvm.') or (s[1]='"') then
+        result:='@'+s
+      else
+        result:='@"'+s+'"';
+      exit;
 {$endif wasm32}
       { Darwin's ordinary C prefix is added by LLVM. Expose the logical name
         so LLVM can recognize library functions, while preserving the exact

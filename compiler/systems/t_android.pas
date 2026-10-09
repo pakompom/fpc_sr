@@ -385,7 +385,8 @@ function tlinkerandroid.DoLink(IsSharedLib: boolean): boolean;
 var
   i: longint;
   binstr, cmdstr: TCmdStr;
-  s, opts, outname: string;
+  { NDK/library paths and user linker options commonly exceed 255 bytes. }
+  s, opts, outname: TCmdStr;
   success: boolean;
 begin
   Result:=False;
@@ -397,6 +398,10 @@ begin
     Message1(exec_i_linking, outname);
 
   opts:='';
+  { NDK libunwind finds a dlopened library's DWARF unwind tables through
+    PT_GNU_EH_FRAME. Merely retaining .eh_frame is not sufficient. }
+  if tf_use_psabieh in target_info.flags then
+    opts:=opts + ' --eh-frame-hdr';
   if not IsSharedLib and (cs_create_pic in current_settings.moduleswitches) then
     opts:=opts + ' --pic-executable';
   if (cs_link_strip in current_settings.globalswitches) and

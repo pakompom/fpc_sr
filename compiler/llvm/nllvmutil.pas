@@ -490,12 +490,22 @@ implementation
 
   class procedure tllvmnodeutils.RegisterModuleInitFunction(pd: tprocdef);
     begin
+      { Android's dllprt0 constructor calls FPC_LIB_START_ANDROID, which
+        dispatches to PASCALMAIN (or defers it until JNI_OnLoad). Registering
+        PASCALMAIN again runs all unit initializers twice and corrupts their
+        InitProc/ExitProc chains. Keep the Android startup ABI in charge. }
+      if target_info.system in systems_android then
+        exit;
       current_module.llvminitprocs.add(pd);
     end;
 
 
   class procedure tllvmnodeutils.RegisterModuleFiniFunction(pd: tprocdef);
     begin
+      { Android registers SysAndroidLibExit with atexit. Its wrapper restores
+        stdio before calling FPC_LIB_EXIT; a generic dtor would call it again. }
+      if target_info.system in systems_android then
+        exit;
       current_module.llvmfiniprocs.add(pd);
     end;
 

@@ -23,7 +23,7 @@ var
 
   GetIcuProc: pointer; public name 'ANDROID_GET_ICU_PROC';
 
-procedure CommonMainAndroid;
+procedure CommonMainAndroid(FindArguments: boolean);
 const
   EmptyEnv: array[0..2] of PAnsiChar = (nil, nil, nil);
   EmptyCmdLine: array[0..0] of PAnsiChar = ( '' );
@@ -40,22 +40,27 @@ begin
   else
     begin
       operatingsystem_parameter_envp:=p;
-      // Finding argc and argv. They are placed before envp
-      Dec(p);
-      if p^ = nil then
+      // Only the initial program environment resides beside argc/argv.
+      // A dlopened library may see an environ array reallocated by setenv;
+      // reading before that allocation is invalid. Its host supplies argv.
+      if FindArguments then
         begin
-          i:=0;
-          while i < 200 do
+          Dec(p);
+          if p^ = nil then
             begin
-              Dec(p);
-              if ptruint(p^) = i then
+              i:=0;
+              while i < 200 do
                 begin
-                  // argc found
-                  operatingsystem_parameter_argc:=i;
-                  operatingsystem_parameter_argv:=p + 1;
-                  break;
+                  Dec(p);
+                  if ptruint(p^) = i then
+                    begin
+                      // argc found
+                      operatingsystem_parameter_argc:=i;
+                      operatingsystem_parameter_argv:=p + 1;
+                      break;
+                    end;
+                  Inc(i);
                 end;
-              Inc(i);
             end;
         end;
     end;
@@ -72,7 +77,7 @@ end;
 
 procedure ProgMainAndroid; cdecl; [public, alias:'FPC_PROG_START_ANDROID'];
 begin
-  CommonMainAndroid;
+  CommonMainAndroid(True);
 end;
 
 // ************* Shared library startup code
@@ -116,7 +121,7 @@ end;
 
 procedure AndroidLibStart; cdecl; [public, alias:'FPC_LIB_START_ANDROID'];
 begin
-  CommonMainAndroid;
+  CommonMainAndroid(False);
   // Call main code FPC_LIB_MAIN_ANDROID of the library.
   // It points either to a standard PASCALMAIN or FPC_JNI_LIB_MAIN_ANDROID if JNI_OnLoad is exported by the library
   // The linker makes all the magic.

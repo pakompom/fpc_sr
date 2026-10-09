@@ -43,9 +43,15 @@ end;
 
 {$ifdef FPC_WASM_HOST_ALLOCATOR}
 { A module sharing linear memory with C must obtain arena blocks from the
-  same allocator. Independently growing a second heap can overwrite C data. }
+  same allocator. Independently growing a second heap can overwrite C data.
+  Unlike raw WebAssembly memory, this allocator can free and resize blocks.
+  Advertise that capability to heap.inc: otherwise it permanently retains
+  released Pascal arenas instead of making them reusable by C and pthreads. }
+{$define HAS_SYSOSFREE}
+{$define FPC_SYSTEM_HAS_SYSOSREALLOC}
 function HostMalloc(size: ptruint): pointer; cdecl; external name 'malloc';
 procedure HostFree(p: pointer); cdecl; external name 'free';
+function HostRealloc(p: pointer; size: ptruint): pointer; cdecl; external name 'realloc';
 
 function SysOSAlloc(size: ptruint): pointer;
 begin
@@ -55,6 +61,11 @@ end;
 procedure SysOSFree(p: pointer; size: ptruint);
 begin
   HostFree(p);
+end;
+
+function SysOSRealloc(p: pointer; oldsize, newsize: ptruint): pointer;
+begin
+  Result:=HostRealloc(p,newsize);
 end;
 {$else FPC_WASM_HOST_ALLOCATOR}
 function SysOSAlloc(size: ptruint): pointer;

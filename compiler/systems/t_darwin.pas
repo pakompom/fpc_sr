@@ -32,7 +32,7 @@ implementation
 
   uses
     sysutils,
-    cutils,cfileutl,cclasses,
+    cutils,cfileutl,cclasses,cstreams,
     verbose,systems,globtype,globals,
     symconst,cscript,triplet,
     fmodule,aasmbase,aasmtai,aasmdata,aasmcpu,cpubase,symsym,symdef,
@@ -56,6 +56,7 @@ implementation
       function GetDarwinCrt1ObjName(isdll: boolean): TCmdStr;
       Function GetDarwinPrtobjName(isdll: boolean): TCmdStr;
       function GetLinkArch: TCmdStr;
+      function GetSDKVersion: TCmdStr;
       function GetLinkVersion: TCmdStr;
       function GetSysroot: TCmdStr;
       function GetLibSearchPath: TCmdStr;
@@ -357,7 +358,131 @@ implementation
       end;
 
 
+    function tlinkerdarwin.GetSDKVersion: TCmdStr;
+
+      function versionstring(const s: ansistring): TCmdStr;
+        var
+          i,start,part,value,code: longint;
+        begin
+          result:='';
+          i:=1;
+          part:=0;
+          repeat
+            start:=i;
+            while (i<=length(s)) and (s[i] in ['0'..'9']) do
+              inc(i);
+            if start=i then
+              exit;
+            val(copy(s,start,i-start),value,code);
+            if (code<>0) or (value>65535) or ((part>0) and (value>255)) then
+              exit;
+            inc(part);
+            if i>length(s) then
+              exit(s);
+            if (s[i]<>'.') or (part=3) then
+              exit;
+            inc(i);
+          until false;
+        end;
+
+      var
+        stream: TCCustomFileStream;
+        settings,key: ansistring;
+        sdkname: TCmdStr;
+        i,start,depth: longint;
+
+      procedure skipspace;
+        begin
+          while (i<=length(settings)) and (settings[i] in [#9,#10,#13,' ']) do
+            inc(i);
+        end;
+
+      function readstring: ansistring;
+        begin
+          inc(i);
+          start:=i;
+          while (i<=length(settings)) and (settings[i]<>'"') do
+            begin
+              if settings[i]='\' then
+                inc(i);
+              inc(i);
+            end;
+          if i<=length(settings) then
+            result:=copy(settings,start,i-start)
+          else
+            result:='';
+          inc(i);
+        end;
+
+      begin
+        result:='';
+        if sysrootpath='' then
+          exit;
+        { Modern SDKs publish their version independently of the SDK directory
+          name. Read only the top-level Version string, skipping nested objects
+          and escaped quotes. This must also work on non-Darwin build hosts. }
+        sdkname:=IncludeTrailingPathDelimiter(sysrootpath)+'SDKSettings.json';
+        if FileExists(sdkname,false) then
+          begin
+            stream:=CFileStreamClass.Create(sdkname,fmOpenRead);
+            settings:='';
+            if (CStreamError=0) and (stream.size>0) then
+              begin
+                setlength(settings,stream.size);
+                setlength(settings,stream.read(settings[1],length(settings)));
+              end;
+            stream.free;
+            i:=1;
+            depth:=0;
+            while i<=length(settings) do
+              case settings[i] of
+                '{','[':
+                  begin
+                    inc(depth);
+                    inc(i);
+                  end;
+                '}',']':
+                  begin
+                    dec(depth);
+                    inc(i);
+                  end;
+                '"':
+                  begin
+                    key:=readstring;
+                    skipspace;
+                    if (depth=1) and (key='Version') and (i<=length(settings)) and (settings[i]=':') then
+                      begin
+                        inc(i);
+                        skipspace;
+                        if (i<=length(settings)) and (settings[i]='"') then
+                          begin
+                            result:=versionstring(readstring);
+                            if result<>'' then
+                              exit;
+                          end;
+                      end;
+                  end;
+                else
+                  inc(i);
+              end;
+          end;
+        { Older SDKs lack JSON metadata. Accept the version in the SDK's own
+          directory name, never a number from an enclosing directory. }
+        sdkname:=ExtractFileName(ExcludeTrailingPathDelimiter(sysrootpath));
+        if ExtractFileExt(sdkname)<>'.sdk' then
+          exit;
+        sdkname:=ChangeFileExt(sdkname,'');
+        i:=1;
+        while (i<=length(sdkname)) and not(sdkname[i] in ['0'..'9']) do
+          inc(i);
+        result:=versionstring(copy(sdkname,i,length(sdkname)));
+      end;
+
+
     function tlinkerdarwin.GetLinkVersion: TCmdStr;
+      var
+        sdkversion,platformname: TCmdStr;
+        sdkmajor,code: longint;
       begin
         if MacOSXVersionMin.isvalid then
           begin
@@ -370,7 +495,22 @@ implementation
           end
         else if iPhoneOSVersionMin.isvalid then
           begin
-            if target_info.system in [system_i386_iphonesim,system_x86_64_iphonesim,system_aarch64_iphonesim] then
+            sdkversion:=GetSDKVersion;
+            if sdkversion='' then
+              sdkversion:=iPhoneOSVersionMin.str;
+            val(copy(sdkversion,1,pos('.',sdkversion+'.')-1),sdkmajor,code);
+            { Xcode 11 (iOS 13 SDK) introduced -platform_version. Unlike the
+              legacy flags it identifies arm64 simulators unambiguously, and
+              it is required by LLD. Retain support for older Apple linkers. }
+            if ((code=0) and (sdkmajor>=13)) or (cs_link_lld in current_settings.globalswitches) then
+              begin
+                if target_info.system in systems_iphonesim then
+                  platformname:='ios-simulator'
+                else
+                  platformname:='ios';
+                result:='-platform_version '+platformname+' '+iPhoneOSVersionMin.str+' '+sdkversion;
+              end
+            else if target_info.system in systems_iphonesim then
               result:='-ios_simulator_version_min '+iPhoneOSVersionMin.str
             else
               result:='-iphoneos_version_min '+iPhoneOSVersionMin.str;

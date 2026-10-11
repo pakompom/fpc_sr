@@ -34,7 +34,9 @@ const
 {$if (defined(linux) and defined(cpu32) and not defined(fs32bit)) or defined(aix)}
     suffix64bit = '64';
     darwinsuffix64bit = '';
-{$elseif defined(darwin_new_iostructs) and (defined(cpui386) or defined(cpux86_64))}
+{$elseif defined(darwin_new_iostructs) and not defined(iphonesim) and (defined(cpui386) or defined(cpux86_64))}
+    { Only Intel macOS versions the inode ABI. iOS simulators always use the
+      64-bit inode layout through the unversioned libc entry points. }
     suffix64bit = '';
     darwinsuffix64bit = '$INODE64';
 {$else}

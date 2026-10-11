@@ -104,6 +104,13 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
 - [Android linker](compiler/systems/t_android.pas): use a section present in
   LLD's default linker script.
 
+- iOS simulator LLVM triples include the version before `-simulator` on both
+  ARM64 and Intel (`compiler/triplet.pas`). The Darwin linker reads the SDK version
+  from `SDKSettings.json`, with a directory-name fallback for older SDKs, and uses
+  `-platform_version` for modern iOS toolchains. Intel simulator libc imports use
+  the unversioned 64-bit inode ABI; Intel macOS retains `$INODE64` aliases
+  (`rtl/unix/oscdeclh.inc`).
+
 [SpaceRangersHD_FPC](https://github.com/pakompom/SpaceRangersHD_FPC) pins this
 repository at `vendor/fpc`. Its `tools/compiler.py` bootstraps the compiler and
 stores the generated compiler and target runtimes in the game’s `.local/fpc/`.

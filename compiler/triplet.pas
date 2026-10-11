@@ -46,8 +46,8 @@ uses
           result:=result+'-apple';
           if target_info.system in systems_macosx then
             result:=result+'-macosx'+MacOSXVersionMin.str
-          else if target_info.system = system_aarch64_iphonesim then
-            result:=result+'-ios-simulator'+iPhoneOSVersionMin.str
+          else if target_info.system in systems_iphonesim then
+            result:=result+'-ios'+iPhoneOSVersionMin.str+'-simulator'
           else
             result:=result+'-ios'+iPhoneOSVersionMin.str;
         end

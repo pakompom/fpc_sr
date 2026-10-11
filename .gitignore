@@ -97,6 +97,7 @@ units
 /tests/gparmake
 /tests/output
 /tests/output*
+/tests/switch/__pycache__/
 !/tests/test/units
 /tests/tstunits/tmp/
 /tests/tstunits/*-*/
@@ -108,5 +109,7 @@ units
 /tests/utils/testfail
 bin/
 /.local/
+# Local diagnostic evidence can contain host paths and environment details.
+/upstream_issues/evidence/
 fpmake
 packages/fcl-db/tests/database.ini

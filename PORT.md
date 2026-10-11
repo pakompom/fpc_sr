@@ -13,6 +13,15 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
 
 ## Local changes
 
+- Experimental Nintendo Switch LLVM target (`aarch64-switch`) using devkitA64
+  and libnx/newlib. The RTL supports UTF-8 device paths such as `sdmc:/` and
+  threading through `NxThreads`; put it first in a threaded program's `uses`
+  clause. Dynamic loading, subprocesses, arbitrary thread suspension and
+  thread priorities are unsupported. Timestamp updates are unsupported for
+  handles and on the `sdmc:` filesystem. Applications must join their workers;
+  unsafe or unverifiable loader returns terminate the process. Generic RTL make
+  integration is pending.
+
 - LLVM WebAssembly support for `wasm32-wasip1` and `wasm32-wasip1threads`:
   C-compatible calls, native Wasm exceptions, memory intrinsics, atomic
   operations and native thread-local storage. Use Clang and `wasm-ld` with

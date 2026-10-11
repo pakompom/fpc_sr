@@ -2429,7 +2429,7 @@ type
   private
     FInitialSuspended: boolean;
 {$endif}
-{$if defined(Unix) or defined(wasi)}
+{$if defined(Unix) or defined(wasi) or defined(SWITCH)}
   private
     // see tthread.inc, ThreadFunc and TThread.Resume
     FSuspendEvent: PRTLEvent;

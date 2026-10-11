@@ -1943,6 +1943,18 @@ implementation
            and (target_info.system in [system_aarch64_darwin, system_aarch64_linux]) then
           optstr:=optstr+' -march='+cputypestr[current_settings.cputype];
 
+        if target_info.system=system_aarch64_switch then
+          begin
+            { Keep -Cp authoritative. -mcpu would replace the requested
+              architecture; tuning alone does not change instruction support. }
+            if (cputypestr[current_settings.cputype]='') or
+               (cputypestr[current_settings.cputype]='ARMV8') then
+              optstr:=optstr+' -march=armv8-a+crc+crypto'
+            else
+              optstr:=optstr+' -march='+lower(cputypestr[current_settings.cputype])+'+crc+crypto';
+            optstr:=optstr+' -mtune=cortex-a57';
+          end;
+
         if ([cs_sanitize_address]*current_settings.moduleswitches)<>[] then
           begin
             optstr:=optstr+' -fsanitize=';
@@ -1987,7 +1999,7 @@ implementation
           idtxt  : 'CLANG-LLVM';
           asmbin : 'clang';
           asmcmd: '-x ir $OPT -target $TRIPLET -c -o $OBJ $ASM $EXTRAOPT';
-          supported_targets : [system_wasm32_wasip1,system_wasm32_wasip1threads,system_x86_64_win64,system_x86_64_linux,system_aarch64_linux,system_arm_linux,system_x86_64_openbsd,system_x86_64_freebsd,system_aarch64_android];
+          supported_targets : [system_wasm32_wasip1,system_wasm32_wasip1threads,system_x86_64_win64,system_x86_64_linux,system_aarch64_linux,system_arm_linux,system_x86_64_openbsd,system_x86_64_freebsd,system_aarch64_android,system_aarch64_switch];
           flags : [af_smartlink_sections,af_llvm];
           labelprefix : '.L';
           labelmaxlen : -1;

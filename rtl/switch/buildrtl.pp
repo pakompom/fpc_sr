@@ -1,0 +1,25 @@
+unit buildrtl;
+interface
+uses
+  ObjPas,
+  Strings,
+  SysConst,
+  SysUtils,
+  SortBase,
+  Math,
+  RtlConsts,
+  Types,
+  TypInfo,
+  FGL,
+  CTypes,
+  Charset,
+  CPAll,
+  Character,
+  FPWideString,
+  Classes,
+  NxThreads,
+  Variants,
+  Dynlibs,
+  Dos;
+implementation
+end.

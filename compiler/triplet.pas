@@ -80,6 +80,8 @@ uses
         result:=result+'-unknown-haiku'
       else if target_info.system in [system_wasm32_wasip1,system_wasm32_wasip1threads] then
         result:=result+'-unknown-wasi'
+      else if target_info.system=system_aarch64_switch then
+        result:=result+'-unknown-none-elf'
       else if target_info.system in systems_embedded then
         result:=result+'-none'
       else

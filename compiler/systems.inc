@@ -218,7 +218,8 @@
              system_mipsel_ps1,         { 123 }
              system_wasm32_wasip1threads,{ 124 }
              system_wasm32_wasip2,      { 125 }
-             system_powerpc64_freebsd   { 126 }
+             system_powerpc64_freebsd,  { 126 }
+             system_aarch64_switch     { 127 }
        );
 
      type
@@ -304,6 +305,7 @@
              ld_aros,
              ld_atari,
              ld_android,
+             ld_switch,
              ld_beos,
              ld_bsd,
              ld_darwin,

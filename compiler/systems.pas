@@ -378,7 +378,7 @@ interface
                                          system_arm_wince,
                                          system_x86_64_win64,
                                          system_i8086_win16,
-                                         system_aarch64_win64]+systems_linux+systems_android+systems_wasm;
+                                         system_aarch64_win64,system_aarch64_switch]+systems_linux+systems_android+systems_wasm;
 
        { all systems that reference symbols in other binaries using indirect imports }
        systems_indirect_var_imports = systems_all_windows+[system_i386_nativent];
@@ -390,7 +390,7 @@ interface
 
        { all systems for which weak linking has been tested/is supported }
        systems_weak_linking = systems_darwin + systems_solaris + systems_linux + systems_android + systems_bsd +
-                              [system_m68k_sinclairql];
+                              [system_m68k_sinclairql,system_aarch64_switch];
 
        systems_internal_sysinit = [system_i386_win32,system_x86_64_win64,
                                    system_i386_linux,system_powerpc64_linux,system_sparc64_linux,system_x86_64_linux,
@@ -453,7 +453,7 @@ interface
 
        { all systems where a value parameter passed by reference must be copied
          on the caller side rather than on the callee side }
-       systems_caller_copy_addr_value_para = [system_aarch64_ios,system_aarch64_iphonesim,system_aarch64_darwin,system_aarch64_linux,system_aarch64_win64,system_aarch64_freebsd];
+       systems_caller_copy_addr_value_para = [system_aarch64_ios,system_aarch64_iphonesim,system_aarch64_darwin,system_aarch64_linux,system_aarch64_win64,system_aarch64_freebsd,system_aarch64_switch];
 
        { all PPC ABIs that use a TOC register to address globals }
        abis_ppc_toc = [

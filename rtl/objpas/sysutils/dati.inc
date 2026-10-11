@@ -1316,7 +1316,7 @@ Var YY,MM,DD,H,m,s,msec : Word;
 begin
   Decodedate (DateTime,YY,MM,DD);
   DecodeTime (DateTime,h,m,s,msec);
-{$if not defined(unix) and not defined(wasi)}
+{$if not defined(unix) and not defined(wasi) and not defined(switch)}
   If (YY<1980) or (YY>2099) then
     Result:=0
   else
@@ -1330,7 +1330,7 @@ begin
 end;
 
 Function UniversalToFileDate(DateTime : TDateTime) : int64;
-{$if not defined(unix) and not defined(wasi)}
+{$if not defined(unix) and not defined(wasi) and not defined(switch)}
 begin
   Result := DateTimeToFileDate(UniversalTimeToLocal(DateTime));
 end;
@@ -1353,7 +1353,7 @@ end;
 
 Function FileDateToDateTime (Filedate : Int64) : TDateTime;
 
-{$if not defined(unix) and not defined(wasi)}
+{$if not defined(unix) and not defined(wasi) and not defined(switch)}
 Var Date,Time : Word;
 
 begin
@@ -1373,7 +1373,7 @@ end;
 
 Function FileDateToUniversal (Filedate : Int64) : TDateTime;
 
-{$if not defined(unix) and not defined(wasi)}
+{$if not defined(unix) and not defined(wasi) and not defined(switch)}
 begin
   Result := LocalTimeToUniversal(FileDateToDateTime(Filedate));
 end;

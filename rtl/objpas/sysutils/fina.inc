@@ -81,7 +81,7 @@ begin
   l:=Length(FileName);
   if (l<2) then
     exit;
-{$IFDEF HASAMIGA}
+{$IF defined(HASAMIGA) or defined(SWITCH)}
   i:=Pos(DriveSeparator,FileName);
   if (i > 0) then Result:=Copy(FileName,1,i);
 {$ELSE}

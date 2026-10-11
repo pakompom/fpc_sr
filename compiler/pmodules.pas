@@ -2711,7 +2711,12 @@ type
           end
         else
           begin
-            main_procinfo:=create_main_proc(mainaliasname,potype_proginit,curr.localsymtable);
+            { libnx startup initializes newlib/argv before C main enters Pascal. }
+            if (target_info.system=system_aarch64_switch) and
+               (mainaliasname=defaultmainaliasname) then
+              main_procinfo:=create_main_proc('FPC_SWITCH_MAIN',potype_proginit,curr.localsymtable)
+            else
+              main_procinfo:=create_main_proc(mainaliasname,potype_proginit,curr.localsymtable);
             main_procinfo.procdef.aliasnames.concat('PASCALMAIN');
           end;
         main_procinfo.parse_body;

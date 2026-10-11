@@ -575,31 +575,30 @@ implementation
 
 
   procedure tllvmtai_typedconstbuilder.do_emit_extended_in_aggregate(p: tai);
-    type
-      p80realval =^t80realval;
-      t80realval = packed record
-        case byte of
-          0: (v: ts80real);
-          1: (a: array[0..9] of byte);
-      end;
-
     var
       arrdef: tdef;
-      i: longint;
-      realval: p80realval;
+      i,index: longint;
+      bits: tllvmextendedbits;
+      value: byte;
     begin
       { emit as an array of 10 bytes }
       arrdef:=carraydef.getreusable(u8inttype,10);
       maybe_begin_aggregate(arrdef);
       if (p.typ<>ait_realconst) then
         internalerror(2015062401);
-      realval:=p80realval(@tai_realconst(p).value.s80val);
-      if target_info.endian=source_info.endian then
-        for i:=0 to 9 do
-          emit_tai(tai_const.Create_8bit(realval^.a[i]),u8inttype)
-      else
-        for i:=9 downto 0 do
-          emit_tai(tai_const.Create_8bit(realval^.a[i]),u8inttype);
+      bits:=llvm_extended_bits(tai_realconst(p).value.s80val);
+      for i:=0 to 9 do
+        begin
+          if target_info.endian=endian_little then
+            index:=i
+          else
+            index:=9-i;
+          if index<8 then
+            value:=byte(bits.low shr (index*8))
+          else
+            value:=byte(bits.high shr ((index-8)*8));
+          emit_tai(tai_const.Create_8bit(value),u8inttype);
+        end;
       maybe_end_aggregate(arrdef);
       { free the original constant, since we didn't emit it }
       p.free;

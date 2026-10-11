@@ -435,28 +435,14 @@ implementation
      end;
 
 
-{$if defined(cpuextended) and (defined(FPC_HAS_TYPE_EXTENDED) or defined(FPC_SOFT_FPUX80))}
+{$ifdef cpuextended}
     function llvmextendedtostr(const e: extended): TSymStr;
       var
-        extendedval: record
-          case byte of
-            1: (e: extended);
-            2: (r: packed record
-      {$ifdef FPC_LITTLE_ENDIAN}
-                  l: int64;
-                  h: word;
-      {$else FPC_LITTLE_ENDIAN}
-                  h: int64;
-                  l: word;
-      {$endif FPC_LITTLE_ENDIAN}
-                end;
-               );
-        end;
+        bits: tllvmextendedbits;
       begin
-        extendedval.e:=e;
+        bits:=llvm_extended_bits(e);
         { hex format is always big endian in llvm }
-        result:='0xK'+hexstr(extendedval.r.h,sizeof(extendedval.r.h)*2)+
-                      hexstr(extendedval.r.l,sizeof(extendedval.r.l)*2);
+        result:='0xK'+hexstr(bits.high,4)+hexstr(bits.low,16);
       end;
 
 {$endif cpuextended}
@@ -521,7 +507,7 @@ implementation
                end;
              result:='';
            end;
-{$if defined(cpuextended) and (defined(FPC_HAS_TYPE_EXTENDED) or defined(FPC_SOFT_FPUX80))}
+{$ifdef cpuextended}
          top_extended80:
            begin
              result:=llvmextendedtostr(o.eval);
@@ -985,7 +971,7 @@ implementation
                 writer.AsmWriteLn(asminfo^.comment+'value: '+single2str(tai_realconst(hp).value.s32val));
               aitrealconst_s64bit:
                 writer.AsmWriteLn(asminfo^.comment+'value: '+double2str(tai_realconst(hp).value.s64val));
-{$if defined(cpuextended) and (defined(FPC_HAS_TYPE_EXTENDED) or defined(FPC_SOFT_FPUX80))}
+{$ifdef cpuextended}
               { can't write full 80 bit floating point constants yet on non-x86 }
               aitrealconst_s80bit:
                 writer.AsmWriteLn(asminfo^.comment+'value: '+extended2str(tai_realconst(hp).value.s80val));
@@ -1002,7 +988,7 @@ implementation
             writer.AsmWrite(llvmdoubletostr(hp.value.s32val));
           aitrealconst_s64bit:
             writer.AsmWriteln(llvmdoubletostr(hp.value.s64val));
-{$if defined(cpuextended) and (defined(FPC_HAS_TYPE_EXTENDED) or defined(FPC_SOFT_FPUX80))}
+{$ifdef cpuextended}
           aitrealconst_s80bit:
             writer.AsmWrite(llvmextendedtostr(hp.value.s80val));
 {$endif defined(cpuextended)}

@@ -103,17 +103,57 @@ interface
     {# This should define the array of instructions as string }
     llvmop2strtable=array[tllvmop] of string[14];
 
+    tllvmextendedbits = record
+      low: qword;
+      high: word;
+    end;
+
   const
     { = max(cpubase.max_operands,8) }
     max_operands = ((-ord(cpubase.max_operands<=8)) and 15) or ((-ord(cpubase.max_operands>8)) and cpubase.max_operands);
 
   function llvm_callingconvention_name(c: tproccalloption): ansistring;
+  function llvm_extended_bits(const value: extended): tllvmextendedbits;
 
 implementation
 
   uses
+{$ifndef FPC_HAS_TYPE_EXTENDED}
+    sfpux80,
+{$endif}
     globals,
     systems;
+
+  function llvm_extended_bits(const value: extended): tllvmextendedbits;
+    var
+{$ifdef FPC_HAS_TYPE_EXTENDED}
+      bits: packed record
+        case byte of
+          0: (value: extended);
+          1: (
+{$ifdef FPC_LITTLE_ENDIAN}
+            low: qword;
+            high: word
+{$else}
+            high: word;
+            low: qword
+{$endif}
+          );
+      end;
+{$else}
+      bits: floatx80;
+{$endif}
+    begin
+{$ifdef FPC_HAS_TYPE_EXTENDED}
+      bits.value:=value;
+{$else}
+      { On ARM and other hosts Extended is Double. Convert its representation
+        before emitting x86_fp80 operands or ten-byte aggregate elements. }
+      bits:=float64_to_floatx80(float64(double(value)));
+{$endif}
+      result.low:=bits.low;
+      result.high:=bits.high;
+    end;
 
   function llvm_callingconvention_name(c: tproccalloption): ansistring;
     begin

@@ -481,17 +481,31 @@ implementation
 
     function tlinkerdarwin.GetLinkVersion: TCmdStr;
       var
-        sdkversion,platformname: TCmdStr;
-        sdkmajor,code: longint;
+        sdkversion,sdkminorstr,platformname: TCmdStr;
+        sdkmajor,sdkminor,code: longint;
       begin
         if MacOSXVersionMin.isvalid then
           begin
-           { This does not depend on the target version but on the toolchain
-             version, but we only know the former and not the latter }
-           if MacOSXVersionMin.relationto(11,0,0)>=0 then
-             result:='-macos_version_min '+MacOSXVersionMin.str
-           else
-             result:='-macosx_version_min '+MacOSXVersionMin.str;
+            sdkversion:=GetSDKVersion;
+            if sdkversion='' then
+              sdkversion:=MacOSXVersionMin.str;
+            val(copy(sdkversion,1,pos('.',sdkversion+'.')-1),sdkmajor,code);
+            sdkminor:=0;
+            if (code=0) and (sdkmajor=10) and (pos('.',sdkversion)<>0) then
+              begin
+                sdkminorstr:=copy(sdkversion,pos('.',sdkversion)+1,length(sdkversion));
+                val(copy(sdkminorstr,1,pos('.',sdkminorstr+'.')-1),sdkminor,code);
+              end;
+            { Xcode 11 (macOS 10.15 SDK) introduced -platform_version. Use the
+              SDK as a proxy for linker support, and record its actual version
+              separately from the deployment target. LLD requires this flag. }
+            if ((code=0) and ((sdkmajor>10) or ((sdkmajor=10) and (sdkminor>=15)))) or
+               (cs_link_lld in current_settings.globalswitches) then
+              result:='-platform_version macos '+MacOSXVersionMin.str+' '+sdkversion
+            else if MacOSXVersionMin.relationto(11,0,0)>=0 then
+              result:='-macos_version_min '+MacOSXVersionMin.str
+            else
+              result:='-macosx_version_min '+MacOSXVersionMin.str;
           end
         else if iPhoneOSVersionMin.isvalid then
           begin

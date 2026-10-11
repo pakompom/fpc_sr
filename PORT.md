@@ -53,6 +53,11 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
   emulation, or preserve x87's exponent range in the Single/Double paths.
   Constants and inline routines retain their defining unit's arithmetic mode.
 
+- LLVM converts host floating-point values to binary80 before emitting x86
+  Extended constants, including array and record initializers. This keeps
+  ARM-hosted cross-compilers from writing Double bytes as Extended values
+  (`compiler/llvm/llvmbase.pas`, `agllvm.pas`, `nllvmtcon.pas`).
+
 - `{$DELPHIORDER ON/OFF}` independently reproduces Delphi 2007 source scheduling
   rules for the game's original `{$O-}` build, while allowing FPC to optimize
   the resulting code. It covers real and integer operands, call arguments,
@@ -110,6 +115,9 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
   `-platform_version` for modern iOS toolchains. Intel simulator libc imports use
   the unversioned 64-bit inode ABI; Intel macOS retains `$INODE64` aliases
   (`rtl/unix/oscdeclh.inc`).
+- The Darwin linker also uses `-platform_version` for macOS SDKs 10.15 and newer
+  and for LLD, recording the SDK version independently of the deployment target
+  (`compiler/systems/t_darwin.pas`). Older Apple toolchains retain legacy flags.
 
 [SpaceRangersHD_FPC](https://github.com/pakompom/SpaceRangersHD_FPC) pins this
 repository at `vendor/fpc`. Its `tools/compiler.py` bootstraps the compiler and

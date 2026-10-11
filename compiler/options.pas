@@ -2517,6 +2517,9 @@ var
   {$endif}
   {$ifdef cpucapabilities}
   cf   : tcpuflags;
+  {$ifdef aarch64}
+  architecture : tcputype;
+  {$endif aarch64}
   cpuflagsstr,
   extrasettings : string;
   {$endif cpucapabilities}
@@ -2738,6 +2741,25 @@ begin
 {$ifdef cpucapabilities}
            { find first occurrence of + or - }
 
+  {$ifdef aarch64}
+           { Declared architecture names contain hyphens (ARMV8.1-A).
+             Match the complete name before parsing capability toggles. }
+           l:=0;
+           for architecture in tcputype do
+             if (length(cputypestr[architecture])>l) and
+                (Copy(s,1,length(cputypestr[architecture]))=cputypestr[architecture]) and
+                ((length(s)=length(cputypestr[architecture])) or
+                 (s[length(cputypestr[architecture])+1] in ['+','-'])) then
+               l:=length(cputypestr[architecture]);
+           if l>0 then
+             begin
+               deletepos:=l+1;
+               if deletepos>length(s) then
+                 deletepos:=0;
+             end
+           else
+             deletepos:=PosCharset(['+','-'],s);
+  {$else aarch64}
   {$ifdef x86_64}
            { Workaround - don't remove the "-" signs from ICELAKE-CLIENT,
              ICELAKE-SERVER, SKYLAKE-X, X86-64 and X86-64-V1 etc. }
@@ -2764,6 +2786,7 @@ begin
            else
   {$endif x86_64}
              deletepos:=PosCharset(['+','-'],s);
+  {$endif aarch64}
 
            if deletepos<>0 then
              begin

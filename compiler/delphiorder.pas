@@ -119,7 +119,10 @@ begin
     ((p.nodetype=inlinen) and
      (tinlinenode(p).inlinenumber in [in_abs_real,in_abs_long,in_sqr_real,
        in_sqrt_real,in_frac_real,in_round_real,in_trunc_real,
-       in_copy_x,in_length_x]));
+       in_copy_x,in_length_x])) or
+    ((p.nodetype=inlinen) and (tinlinenode(p).inlinenumber=in_high_x) and
+     assigned(tunarynode(p).left) and
+     is_dynamic_array(tunarynode(p).left.resultdef));
 end;
 
 function extra_integer(v: word): word;
@@ -152,6 +155,10 @@ begin
     exit(delphi_source_extended(tunarynode(p).left));
   result:=is_fpu(p.resultdef) and
     ((p.nodetype in [addn,subn,muln,slashn]) or
+     ((p.nodetype=inlinen) and
+      (tinlinenode(p).inlinenumber in [in_abs_real,in_sqr_real,in_sqrt_real,
+       in_int_real,in_frac_real,in_exp_real,in_sin_real,in_cos_real,
+       in_ln_real,in_arctan_real,in_pi_real])) or
      ((p.nodetype=realconstn) and not(nf_explicit in p.flags)) or
      (tfloatdef(p.resultdef).floattype in [s80real,sc80real]) or
      (df_source_extended in p.resultdef.defoptions));
@@ -249,7 +256,18 @@ begin
           in_abs_real,in_sqr_real,in_sqrt_real: exit(a or 1);
           in_round_real,in_trunc_real: exit(a or $1c03);
           in_abs_long: exit(a or $cc0);
-          in_ord_x,in_low_x,in_high_x: exit(a);
+          in_ord_x,in_low_x: exit(a);
+          in_high_x,in_length_x:
+            begin
+              { Delphi obtains dynamic-array bounds with a one-argument
+                runtime call. Retain that source demand even though FPC
+                implements the bound as an inline header load. This also
+                schedules the hidden bound of an open-array argument. }
+              if is_dynamic_array(tunarynode(p).left.resultdef) then
+                exit(a or $1c47);
+              if tinlinenode(p).inlinenumber=in_high_x then exit(a);
+              exit(a or $1c43);
+            end;
           in_pi_real: exit(0);
           else
             { Multi-argument intrinsics store a call-parameter list in left.

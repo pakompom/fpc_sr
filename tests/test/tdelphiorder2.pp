@@ -289,12 +289,15 @@ begin
   SetLength(DynamicValues,2);
   DynamicValues[0] := 7;
   ArrayValue(DynamicValues,MutateArray);
-  if (FirstSeen<>3) or (SecondSeen<>42) then Halt(16);
+  { Update 4 reads the hidden bound before MutateArray, then the data pointer. }
+  if (FirstSeen<>2) or (SecondSeen<>42) then Halt(16);
   ArrayValue([A,B],C);
   if (FirstSeen<>2) or (SecondSeen<>1) then Halt(17);
   Trace := '';
   RealPair(Sqr(SingleA),Min(FloatA,FloatB));
-  if (Trace<>'AAB') or (FirstSeen<>5) then Halt(18);
+  { Sqr has source Extended type. Its conversion to Double prevents early
+    capture before the later saved-inline Min prefix in Delphi Update 4. }
+  if (Trace<>'ABA') or (FirstSeen<>5) then Halt(18);
   Trace := '';
   Callbacks[0] := BinaryCallback;
   Shared := Callbacks[TargetIndex](A,B);

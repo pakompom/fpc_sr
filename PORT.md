@@ -97,6 +97,10 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
   survives lowering, inlining and unit files; the target calling ABI is unchanged.
   Array scheduling uses the retained Delphi32 record layout, including packed
   and variant records, independently of the target's pointer size and alignment.
+  Dynamic-array bounds retain Delphi's runtime-call demand, including hidden
+  open-array bounds. Real conversions retain their saved-inline capture barriers
+  when Extended and Double share a target representation. Scalar Math.Min/Max
+  retain inline preparation information on Wasm as well as native targets.
   It is not a complete Delphi 2007 scheduler: argument ties and some shifts still
   depend on temporary x86 register availability, and general saved-inline,
   managed-assignment and exception-only ordering need separate treatment.

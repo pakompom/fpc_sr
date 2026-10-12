@@ -222,6 +222,11 @@ function MinIntValue(const Data: array of Integer): Integer;
 function MaxIntValue(const Data: array of Integer): Integer;
 
 { Extra, not present in Delphi, but used frequently  }
+{$push}
+{$inline on}
+{ Keep these scalar selectors' inline bodies available on every target.
+  DELPHIORDER uses their saved argument preparation even when a particular
+  call is not inlined. The rest of Math retains the Wasm inline workaround. }
 function Min(a, b: Integer): Integer;inline; overload;
 function Max(a, b: Integer): Integer;inline; overload;
 { this causes more trouble than it solves
@@ -244,6 +249,7 @@ function Max(a, b: Double): Double;inline; overload;
 function Min(a, b: Extended): Extended;inline; overload;
 function Max(a, b: Extended): Extended;inline; overload;
 {$endif FPC_HAS_TYPE_EXTENDED}
+{$pop}
 
 function InRange(const AValue, AMin, AMax: Integer): Boolean;inline; overload;
 function InRange(const AValue, AMin, AMax: Int64): Boolean;inline; overload;
@@ -3428,6 +3434,8 @@ end;
 {$endif FPC_HAS_TYPE_EXTENDED}
 
 
+{$push}
+{$inline on}
 function Min(a, b: Integer): Integer;inline;
 begin
   if a < b then
@@ -3547,6 +3555,7 @@ begin
     Result := b;
 end;
 {$endif FPC_HAS_TYPE_EXTENDED}
+{$pop}
 
 function InRange(const AValue, AMin, AMax: Integer): Boolean;inline;
 

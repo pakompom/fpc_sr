@@ -1,0 +1,8 @@
+integer-high: OM 1
+integer-length: OM 2
+native-high: OM 2
+wide-high: OM 2
+integer-cast: OM 2
+native-cast: OM 2
+wide-cast: OM 2
+byte-cast: OM 2

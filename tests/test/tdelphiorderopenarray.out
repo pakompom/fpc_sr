@@ -1,0 +1,10 @@
+register: M 2 42 0
+before: M 2 42 0
+pascal: M 2 7 0
+returned: GM 2 7 0
+forwarded: M 2 7 0
+empty: M 0 -1 0
+high: M 1 0 0
+length: M 2 0 0
+high-inline: OM 1 0 0
+length-inline: OM 2 0 0

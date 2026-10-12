@@ -340,16 +340,46 @@ implementation
     type
       ttypeconvnodetype = (tct_implicit,tct_explicit,tct_internal);
 
-    procedure preserve_delphi_source_type(p:tnode; destination:tdef);
+    procedure preserve_delphi_bound_order(p,operand:tnode; destination:tdef;
+      explicit_conversion:boolean);
+      var
+        source_size:int64;
+        source_alignment:shortint;
       begin
-        { Equal target float types can still have different source scheduling
-          classes. Save that class before removing a no-op conversion. }
+        if not(cs_delphi_order in operand.localswitches) or
+           (operand.nodetype<>inlinen) or
+           not(tinlinenode(operand).inlinenumber in [in_high_x,in_length_x]) or
+           not assigned(tunarynode(operand).left) or
+           not is_dynamic_array(tunarynode(operand).left.resultdef) or
+           not is_integer(destination) then exit;
+        { Delphi's dynamic-array bound helpers return Integer. FPC uses
+          SizeInt, so a 64-to-32 target conversion need not be a source
+          conversion, while an elided conversion to Int64/NativeInt can be.
+          Preserve that distinction without changing the converted value.
+          Explicit casts still form source capture barriers. }
+        delphi32_layout(destination,source_size,source_alignment);
+        delphi_set_source_order(p,delphi_source_demand(operand),false,
+          (source_size=4) and not explicit_conversion and
+          delphi_prefix_capturable(operand));
+      end;
+
+    procedure preserve_delphi_source_type(p:tnode; destination:tdef;
+      explicit_conversion:boolean);
+      begin
+        preserve_delphi_bound_order(p,p,destination,explicit_conversion);
+        { Equal target float types can still require a Delphi source
+          conversion: Extended becomes Double on several targets, including
+          the results of real builtins. Keep the operand's demand and real
+          scheduling class, but retain the conversion's prefix-capture
+          barrier when removing its no-op target representation. Delphi's
+          saved-inline preparation captures calls/builtins, not conversions. }
         if (cs_delphi_order in p.localswitches) and
            is_fpu(p.resultdef) and is_fpu(destination) and
-           ((df_source_extended in p.resultdef.defoptions)<>
-            (df_source_extended in destination.defoptions)) then
+           (delphi_source_extended(p)<>
+            ((df_source_extended in destination.defoptions) or
+             (tfloatdef(destination).floattype in [s80real,sc80real]))) then
           delphi_set_source_order(p,delphi_source_demand(p),
-            delphi_source_extended(p),delphi_prefix_capturable(p));
+            delphi_source_extended(p),false);
       end;
 
     function remove_pc24_widening(var p:tnode; destination:tdef):boolean;
@@ -427,7 +457,7 @@ implementation
            ((p.blocktype=bt_const) or
             not ctypeconvnode.target_specific_need_equal_typeconv(p.resultdef,def)) then
           begin
-            preserve_delphi_source_type(p,def);
+            preserve_delphi_source_type(p,def,convtype=tct_explicit);
             { don't replace encoded string constants to rawbytestring encoding.
               preserve the codepage }
             if not (is_rawbytestring(def) and (p.nodetype=stringconstn)) then
@@ -3043,6 +3073,8 @@ implementation
         if codegenerror then
           exit;
 
+        preserve_delphi_bound_order(self,left,resultdef,nf_explicit in flags);
+
         if is_deferred_stmt_expr(left) and
             ((resultdef.typ=procvardef) or is_funcref(resultdef)) then
           begin
@@ -3105,7 +3137,7 @@ implementation
               te_exact,
               te_equal :
                 begin
-                  preserve_delphi_source_type(left,resultdef);
+                  preserve_delphi_source_type(left,resultdef,nf_explicit in flags);
                   result := simplify(false);
                   if assigned(result) then
                     exit;

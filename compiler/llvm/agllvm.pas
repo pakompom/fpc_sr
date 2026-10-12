@@ -192,10 +192,7 @@ implementation
               #0..#31,
               #127..#255,
               '"','\':
-                result:=result+
-                        '\'+
-                        chr((ord(s[i]) shr 4)+ord('0'))+
-                        chr((ord(s[i]) and $f)+ord('0'));
+                result:=result+'\'+hexstr(ord(s[i]),2);
             else
               result:=result+s[i];
             end;
@@ -244,10 +241,7 @@ implementation
               #0..#31,
               #127..#255,
               '"','\':
-                result:=result+
-                        '\'+
-                        chr((ord(s[i]) shr 4)+ord('0'))+
-                        chr((ord(s[i]) and $f)+ord('0'));
+                result:=result+'\'+hexstr(ord(s[i]),2);
             else
               result:=result+s[i];
             end;
@@ -360,6 +354,8 @@ implementation
            owner.writer.AsmWrite(llvmencodetypename(para^.def));
            if para^.valueext<>lve_none then
              owner.writer.AsmWrite(llvmvalueextension2str[para^.valueext]);
+           if lcp_inreg in para^.flags then
+             owner.writer.AsmWrite(' inreg');
            if lcp_byval in para^.flags then
              owner.writer.AsmWrite(llvmparatypeattr(' byval',para^.def,true));
            if lcp_sret in para^.flags then
@@ -510,7 +506,7 @@ implementation
 {$ifdef cpuextended}
          top_extended80:
            begin
-             result:=llvmextendedtostr(o.eval);
+             result:='0xK'+hexstr(o.eval.high,4)+hexstr(o.eval.low,16);
            end;
 {$endif cpuextended}
          top_undef:
@@ -1128,21 +1124,25 @@ implementation
           end;
 {$endif wasm32}
         begin
-{$ifdef x86_64}
+{$if defined(i386) or defined(x86_64)}
           { Bitcode assembled from IR does not inherit Clang's command-line
             ISA selection. Record it on definitions so LTO retains the same
             instruction set as the per-unit compilation. }
           if is_definition then
+{$ifdef x86_64}
             case current_settings.fputype of
               fpu_x86_64_v1:
                 writer.AsmWrite(' "target-cpu"="x86-64"');
               fpu_x86_64_v2,fpu_x86_64_v3,fpu_x86_64_v4:
                 writer.AsmWrite(' "target-cpu"="'+fputypestrllvm[current_settings.fputype]+'"');
               else
+{$endif x86_64}
                 if fputypestrllvm[current_settings.fputype]<>'' then
                   writer.AsmWrite(' "target-features"="+'+fputypestrllvm[current_settings.fputype]+'"');
+{$ifdef x86_64}
             end;
 {$endif x86_64}
+{$endif i386 or x86_64}
 {$ifdef aarch64}
           { clang's -march option controls code generation, but does not
             preserve the architecture in bitcode assembled from LLVM IR.
@@ -1809,7 +1809,8 @@ implementation
                current_asmdata.asmlists[hal].Empty then
               continue;
             writer.AsmWriteLn(asminfo^.comment+'Begin asmlist '+AsmlistTypeStr[hal]);
-            if hal<>al_dwarf_frame then
+            if (hal<>al_dwarf_frame) and
+               not((hal=al_exports) and (target_info.system in systems_windows)) then
               writetree(current_asmdata.asmlists[hal])
             else
               begin
@@ -1893,6 +1894,11 @@ implementation
         else
           optstr:='-O0';
         optstr:=optstr+wpostr;
+        { LLVM's i386 COFF assembler normally treats every name beginning
+          with L as a temporary label. Pascal unit names such as Location
+          must retain their exact external symbol spelling. }
+        if target_info.system=system_i386_win32 then
+          optstr:=optstr+' -Wa,-L';
 {$ifdef wasm32}
         { Native Wasm EH uses LLVM's funclet lowering. Keep the encoding
           selection consistent with FPC's public target switch. }
@@ -1999,7 +2005,7 @@ implementation
           idtxt  : 'CLANG-LLVM';
           asmbin : 'clang';
           asmcmd: '-x ir $OPT -target $TRIPLET -c -o $OBJ $ASM $EXTRAOPT';
-          supported_targets : [system_wasm32_wasip1,system_wasm32_wasip1threads,system_x86_64_win64,system_x86_64_linux,system_aarch64_linux,system_arm_linux,system_x86_64_openbsd,system_x86_64_freebsd,system_aarch64_android,system_aarch64_switch];
+          supported_targets : [system_i386_win32,system_wasm32_wasip1,system_wasm32_wasip1threads,system_x86_64_win64,system_x86_64_linux,system_aarch64_linux,system_arm_linux,system_x86_64_openbsd,system_x86_64_freebsd,system_aarch64_android,system_aarch64_switch];
           flags : [af_smartlink_sections,af_llvm];
           labelprefix : '.L';
           labelmaxlen : -1;

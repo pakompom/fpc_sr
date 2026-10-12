@@ -554,7 +554,7 @@ interface
             top_double : (dval:double);
             top_undef :  ();
           {$ifdef cpuextended}
-            top_extended80 : (eval:extended);
+            top_extended80 : (eval:tllvmextendedbits);
           {$endif cpuextended}
             top_tai    : (ai: tai);
             top_def    : (def: tdef; defderef: tderef);

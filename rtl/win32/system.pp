@@ -31,6 +31,13 @@ interface
 {$define FPC_SYSTEM_HAS_SYSDLH}
 {$define FPC_HAS_SETCTRLBREAKHANDLER}
 
+{$ifdef CPULLVM}
+{ LLVM may lower memory operations, FMA and wide integer arithmetic to
+  runtime calls. Use the selected MinGW CRT and LLVM compiler builtins. }
+{$linklib msvcrt}
+{$linklib clang_rt.builtins-i386}
+{$endif}
+
 {$ifdef FPC_USE_WIN32_SEH}
   {$define FPC_SYSTEM_HAS_RAISEEXCEPTION}
   {$define FPC_SYSTEM_HAS_RERAISE}
@@ -139,6 +146,14 @@ var
     to check if the call stack can be written on exceptions }
   _SS : Cardinal;
 
+{$ifdef CPULLVM}
+function CurrentStackSegment: Cardinal; assembler; nostackframe;
+asm
+  xorl %eax,%eax
+  movw %ss,%ax
+end;
+{$endif}
+
 procedure Exe_entry(constref info : TEntryInformation);[public,alias:'_FPC_EXE_Entry'];
   var
     xframe: TEXCEPTION_FRAME;
@@ -150,6 +165,12 @@ procedure Exe_entry(constref info : TEntryInformation);[public,alias:'_FPC_EXE_E
 {$ifndef FPC_USE_WIN32_SEH}
      install_exception_handlers;
 {$endif FPC_USE_WIN32_SEH}
+{$ifdef CPULLVM}
+     { LLVM owns the stack frame and its DWARF unwind description. Changing
+       EBP/ESP across inline-assembly blocks would invalidate both. }
+     _SS:=CurrentStackSegment;
+     EntryInformation.PascalMain();
+{$else}
      { This strange construction is needed to solve the _SS problem
        with a smartlinked syswin32 (PFV) }
      asm
@@ -177,6 +198,7 @@ procedure Exe_entry(constref info : TEntryInformation);[public,alias:'_FPC_EXE_E
      asm
         popl %ebp
      end;
+{$endif}
      { if we pass here there was no error ! }
      system_exit;
   end;
@@ -310,9 +332,14 @@ function SetUnhandledExceptionFilter(lpTopLevelExceptionFilter : TTopLevelExcept
 
 const
   MaxExceptionLevel = 16;
+{$ifndef CPULLVM}
   exceptLevel : Byte = 0;
 
 var
+{$else}
+threadvar
+  exceptLevel : Byte;
+{$endif}
   exceptEip       : array[0..MaxExceptionLevel-1] of Longint;
   exceptError     : array[0..MaxExceptionLevel-1] of Byte;
   resetFPU        : array[0..MaxExceptionLevel-1] of Boolean;
@@ -330,6 +357,22 @@ begin
 end;
 {$endif SYSTEMEXCEPTIONDEBUG}
 
+{$ifdef CPULLVM}
+procedure JumpToHandleErrorFrame;
+  var
+    faultaddr: pointer;
+    error: Longint;
+    reset: boolean;
+  begin
+    dec(exceptLevel);
+    faultaddr:=pointer(exceptEip[exceptLevel]);
+    error:=exceptError[exceptLevel];
+    reset:=resetFPU[exceptLevel];
+    if reset then
+      SysResetFPU;
+    HandleErrorAddrFrame(error,faultaddr,nil);
+  end;
+{$else}
 procedure JumpToHandleErrorFrame;
   var
     eip, ebp, error : Longint;
@@ -365,6 +408,7 @@ procedure JumpToHandleErrorFrame;
 {$endif SYSTEMEXCEPTIONDEBUG}
     end;
   end;
+{$endif}
 
 function syswin32_i386_exception_handler(excep : PExceptionPointers) : Longint;stdcall;
   var
@@ -466,6 +510,14 @@ function syswin32_i386_exception_handler(excep : PExceptionPointers) : Longint;s
         resetFPU[exceptLevel] := must_reset_fpu;
         inc(exceptLevel);
 
+{$ifdef CPULLVM}
+        { Resume as if the faulting instruction had called the helper. Its
+          ordinary LLVM frame can then unwind into the original DWARF frame,
+          including when EBP is used as a general-purpose register. DWARF
+          lookup subtracts one from a return PC, hence the +1. }
+        dec(excep^.ContextRecord^.Esp,SizeOf(Pointer));
+        PPtrUInt(excep^.ContextRecord^.Esp)^:=excep^.ContextRecord^.Eip+1;
+{$endif}
         excep^.ContextRecord^.Eip := Longint(@JumpToHandleErrorFrame);
         excep^.ExceptionRecord^.ExceptionCode := 0;
 

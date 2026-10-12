@@ -158,7 +158,6 @@ implementation
   function llvm_callingconvention_name(c: tproccalloption): ansistring;
     begin
       // TODO (unsupported by LLVM at this time):
-      //   * pocall_pascal
       //   * pocall_oldfpccall
       //   * pocall_syscall
       //   * pocall_far16
@@ -168,8 +167,11 @@ implementation
         pocall_none:
           result:='';
 {$ifdef i386}
-        pocall_register:
-          result:='x86_borlandregcallcc';
+        { LLVM models the Delphi register ABI using inreg parameters and
+          stdcall stack cleanup. Stack arguments are reordered separately. }
+        pocall_register,
+        pocall_pascal,
+        pocall_safecall,
         pocall_stdcall:
           result:='x86_stdcallcc';
 {$endif i386}

@@ -35,6 +35,7 @@ unit i_win;
             name         : 'Win32 for i386';
             shortname    : 'Win32';
             flags        : [tf_files_case_aware,tf_has_dllscanner
+                            {$ifdef llvm},tf_use_psabieh{$endif}
                             ,tf_smartlink_sections{,tf_section_threadvars}{,tf_needs_dwarf_cfi},
                             tf_winlikewidestring,tf_no_pic_supported,
                             tf_no_generic_stackcheck,tf_has_winlike_resources,
@@ -72,7 +73,7 @@ unit i_win;
             linkextern   : ld_windows;
             ar           : ar_gnu_ar;
             res          : res_gnu_windres;
-            dbg          : dbg_stabs;
+            dbg          : {$ifdef llvm}dbg_dwarf2{$else}dbg_stabs{$endif};
             script       : script_dos;
             endian       : endian_little;
             alignment    :

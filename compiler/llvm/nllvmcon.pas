@@ -51,7 +51,7 @@ implementation
       globtype,globals,verbose,cutils,
       symbase,symtable,symconst,symdef,symsym,defutil,
       aasmbase,aasmdata,aasmcnst,
-      ncon,
+      ncon,pc24const,
       llvmbase,aasmllvm,aasmllvmmetadata,hlcgobj,
       cgbase,cgutils,
       cpubase;
@@ -191,6 +191,12 @@ implementation
 
 
     procedure tllvmrealconstnode.pass_generate_code;
+{$ifdef cpuextended}
+      var
+        bytes80: tpc24binary80;
+        bits80: tllvmextendedbits;
+        i: longint;
+{$endif}
       begin
          { llvm supports floating point constants directly }
          location_reset(location,LOC_FPUREGISTER,def_cgsize(resultdef));
@@ -205,7 +211,20 @@ implementation
              current_asmdata.CurrAsmList.concat(taillvm.op_reg_size_const_size(la_sitofp,location.register,s64inttype,round(value_real),sc80floattype));
 {$ifdef cpuextended}
            s80real,sc80real:
-             current_asmdata.CurrAsmList.concat(taillvm.op_reg_size_fpconst80_size(la_bitcast,location.register,resultdef,value_real,resultdef));
+             if pc24_value.valid and (cs_legacy_pc24 in localswitches) then
+               begin
+                 { Preserve the source binary80 literal on hosts whose
+                   Extended is only Double, including values outside the
+                   binary64 exponent range. }
+                 bytes80:=pc24_to_binary80(pc24_value);
+                 bits80.low:=0;
+                 for i:=0 to 7 do
+                   bits80.low:=bits80.low or (qword(bytes80[i]) shl (i*8));
+                 bits80.high:=word(bytes80[8]) or (word(bytes80[9]) shl 8);
+                 current_asmdata.CurrAsmList.concat(taillvm.op_reg_size_fpbits80_size(la_bitcast,location.register,resultdef,bits80,resultdef));
+               end
+             else
+               current_asmdata.CurrAsmList.concat(taillvm.op_reg_size_fpconst80_size(la_bitcast,location.register,resultdef,value_real,resultdef));
 {$endif cpuextended}
            else
              internalerror(2013102501);

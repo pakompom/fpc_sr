@@ -1144,11 +1144,18 @@ implementation
       var
         targetopts: string;
       begin
-{$if defined(llvm) and defined(x86_64)}
+{$if defined(llvm) and (defined(x86_64) or defined(i386))}
         if cs_link_lld in current_settings.globalswitches then
           begin
-            Info.ExeCmd[1]:='ld.lld -m i386pep $OPT $GCSECTIONS $MAP $STRIP $APPTYPE $ENTRY $IMAGEBASE -o $EXE @$RES';
-            Info.DllCmd[1]:='ld.lld -m i386pep $OPT $GCSECTIONS $MAP $STRIP --dll $APPTYPE $ENTRY $IMAGEBASE -o $EXE @$RES';
+{$ifdef i386}
+            { Exact Pascal symbols may begin with L, which LLVM's i386 COFF
+              backend otherwise treats as a temporary assembler label. }
+            targetopts:='-m i386pe --mllvm=--save-temp-labels';
+{$else}
+            targetopts:='-m i386pep';
+{$endif}
+            Info.ExeCmd[1]:='ld.lld '+targetopts+' $OPT $GCSECTIONS $MAP $STRIP $APPTYPE $ENTRY $IMAGEBASE -o $EXE @$RES';
+            Info.DllCmd[1]:='ld.lld '+targetopts+' $OPT $GCSECTIONS $MAP $STRIP --dll $APPTYPE $ENTRY $IMAGEBASE -o $EXE @$RES';
             exit;
           end;
 {$endif}
@@ -1209,7 +1216,11 @@ implementation
         while not SharedLibFiles.Empty do
           begin
             s:=SharedLibFiles.GetFirst;
-            if FindLibraryFile(s,target_info.staticClibprefix,target_info.staticClibext,s2) then
+            { Match MinGW's shared-library search order. In particular, using
+              the libunwind import library keeps its C runtime initialization
+              in the DLL instead of mixing CRT startup into a Pascal EXE. }
+            if FindLibraryFile(s,target_info.staticClibprefix,'.dll.a',s2) or
+               FindLibraryFile(s,target_info.staticClibprefix,target_info.staticClibext,s2) then
               linkres.AddFileName(MaybeQuoted(s2))
             else
               begin
@@ -1231,7 +1242,7 @@ implementation
         s,s2    : TCmdStr;
         i       : integer;
       begin
-{$if defined(llvm) and defined(x86_64)}
+{$if defined(llvm) and (defined(x86_64) or defined(i386))}
         if cs_link_lld in current_settings.globalswitches then
           exit(WriteLLDResponseFile);
 {$endif}

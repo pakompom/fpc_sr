@@ -495,8 +495,12 @@ unit cpupara;
                 paradef:=sinttype;
               end;
             { Copy to stack? }
+            { LLVM passes scalars as one IR operand and aggregates byval;
+              it does not need the native push instruction's 32-bit pieces. }
+{$ifndef llvm}
             if (paracgsize=OS_NO) or
                (use_fixed_stack) then
+{$endif llvm}
               begin
                 paraloc:=hp.paraloc[side].add_location;
                 paraloc^.loc:=LOC_REFERENCE;
@@ -519,6 +523,7 @@ unit cpupara;
                   inc(paraloc^.reference.offset,target_info.first_parm_offset);
                 parasize:=align(parasize+paralen,varalign);
               end
+{$ifndef llvm}
             else
               begin
                 if paralen=0 then
@@ -567,7 +572,9 @@ unit cpupara;
                     dec(paralen,l);
                     firstparaloc:=false;
                   end;
-              end;
+              end
+{$endif llvm}
+            ;
             if p.proccalloption in pushleftright_pocalls then
               dec(i)
             else
@@ -668,8 +675,10 @@ unit cpupara;
                       if pass=2 then
                         begin
                           { Copy to stack? }
+{$ifndef llvm}
                           if (use_fixed_stack) or
                              (paracgsize=OS_NO) then
+{$endif llvm}
                             begin
                               paraloc:=hp.paraloc[side].add_location;
                               paraloc^.loc:=LOC_REFERENCE;
@@ -685,6 +694,7 @@ unit cpupara;
                                 inc(paraloc^.reference.offset,target_info.first_parm_offset);
                               parasize:=align(parasize+paralen,varalign);
                             end
+{$ifndef llvm}
                           else
                             begin
                               if paralen=0 then
@@ -728,7 +738,9 @@ unit cpupara;
                                   dec(paralen,l);
                                   firstparaloc:=false;
                                 end;
-                            end;
+                            end
+{$endif llvm}
+                          ;
                         end;
                   end;
                 case pass of

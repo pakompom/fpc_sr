@@ -60,7 +60,7 @@ uses
           if target_info.system in systems_windows then
             result:=result+'-pc';
 {$ifdef llvm}
-          if target_info.system=system_x86_64_win64 then
+          if target_info.system in [system_i386_win32,system_x86_64_win64] then
             result:=result+'-windows-gnu'
           else
 {$endif}

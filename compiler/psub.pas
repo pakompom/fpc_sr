@@ -1348,6 +1348,15 @@ implementation
              else
                procdef.personality:=search_system_proc('_FPC_PSABIEH_PERSONALITY_V0');
 {$endif}
+{$ifdef llvm}
+             { COFF garbage collection does not retain a local personality
+               through its DWARF CIE reference. LTO can internalize it, so
+               keep the personality as an explicit linker root. }
+             if target_info.system=system_i386_win32 then
+               cnodeutils.RegisterUsedAsmSym(
+                 current_asmdata.RefAsmSymbol(procdef.personality.mangledname,AT_FUNCTION),
+                 procdef.personality,false);
+{$endif llvm}
            end;
       end;
 

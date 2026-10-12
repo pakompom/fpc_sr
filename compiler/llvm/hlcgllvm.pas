@@ -106,6 +106,7 @@ uses
       procedure a_loadfpu_ref_reg(list: TAsmList; fromsize, tosize: tdef; const ref: treference; reg: tregister); override;
       procedure a_loadfpu_reg_ref(list: TAsmList; fromsize, tosize: tdef; reg: tregister; const ref: treference); override;
       procedure a_loadfpu_reg_reg(list: TAsmList; fromsize, tosize: tdef; reg1, reg2: tregister); override;
+      procedure a_loadfpu_loc_reg(list: TAsmList; fromsize, tosize: tdef; const loc: tlocation; const reg: tregister); override;
      protected
       procedure gen_fpconstrained_intrinsic(list: TAsmList; const intrinsic: TIDString; fromsize, tosize: tdef; fromreg, toreg: tregister; roundingmode: boolean);
      public
@@ -128,6 +129,7 @@ uses
       procedure a_loadmm_ref_reg(list: TAsmList; fromsize, tosize: tdef; const ref: treference; reg: tregister; shuffle: pmmshuffle); override;
       procedure a_loadmm_reg_ref(list: TAsmList; fromsize, tosize: tdef; reg: tregister; const ref: treference; shuffle: pmmshuffle); override;
       procedure a_loadmm_reg_reg(list: TAsmList; fromsize, tosize: tdef; reg1, reg2: tregister; shuffle: pmmshuffle); override;
+      procedure a_loadmm_loc_reg(list: TAsmList; fromsize, tosize: tdef; const loc: tlocation; const reg: tregister; shuffle: pmmshuffle); override;
       procedure a_opmm_reg_reg(list: TAsmList; Op: TOpCG; size: tdef; src, dst: tregister; shuffle: pmmshuffle); override;
       procedure a_loadmm_intreg_reg(list: TAsmList; fromsize, tosize: tdef; intreg, mmreg: tregister; shuffle: pmmshuffle); override;
       procedure a_loadmm_reg_intreg(list: TAsmList; fromsize, tosize: tdef; mmreg, intreg: tregister; shuffle: pmmshuffle); override;
@@ -614,7 +616,7 @@ implementation
       end;
 
   var
-    i: longint;
+    i,paraindex: longint;
     href: treference;
     callpara: pllvmcallpara;
     paraloc: pcgparalocation;
@@ -623,15 +625,18 @@ implementation
     callparas:=tfplist.Create;
     for i:=0 to high(paras) do
       begin
+        paraindex:=llvmparaindex(pd,i,callerside);
         { skip parameters without data }
-        if paras[i]^.isempty then
+        if paras[paraindex]^.isempty then
           continue;
-        paraloc:=paras[i]^.location;
+        paraloc:=paras[paraindex]^.location;
         firstparaloc:=true;
         while assigned(paraloc) do
           begin
             new(callpara,init(paraloc^.def,std_param_align,lve_none,[]));
-            if paras[i]^.def=llvm_metadatatype then
+            if llvmparainreg(pd,paraindex,callerside) then
+              include(callpara^.flags,lcp_inreg);
+            if paras[paraindex]^.def=llvm_metadatatype then
               include(callpara^.flags,lcp_metadata);
             callpara^.def:=paraloc^.def;
             { if the paraloc doesn't contain the value itself, it's a byval
@@ -647,8 +652,8 @@ implementation
               end;
             if firstparaloc and
                (lcp_byval in callpara^.flags) then
-              callpara^.alignment:=paras[i]^.Alignment;
-            llvmextractvalueextinfo(paras[i]^.def, callpara^.def, callpara^.valueext);
+              callpara^.alignment:=paras[paraindex]^.Alignment;
+            llvmextractvalueextinfo(paras[paraindex]^.def, callpara^.def, callpara^.valueext);
             case paraloc^.llvmloc.loc of
               LOC_CONSTANT:
                 begin
@@ -1561,6 +1566,19 @@ implementation
     end;
 
 
+  procedure thlcgllvm.a_loadfpu_loc_reg(list: TAsmList; fromsize, tosize: tdef; const loc: tlocation; const reg: tregister);
+    begin
+      { LLVM scalar floating-point values have the same representation in
+        both virtual register classes. i386 still returns them in ST0 even
+        when expressions use SSE, as required by the native ABI. }
+      if (loc.loc in [LOC_MMREGISTER,LOC_CMMREGISTER]) and
+         (fromsize.typ=floatdef) and (tosize.typ=floatdef) then
+        a_loadfpu_reg_reg(list,fromsize,tosize,loc.register,reg)
+      else
+        inherited;
+    end;
+
+
   procedure thlcgllvm.gen_fpconstrained_intrinsic(list: TAsmList; const intrinsic: TIDString; fromsize, tosize: tdef; fromreg, toreg: tregister; roundingmode: boolean);
     var
       exceptmode: ansistring;
@@ -1895,6 +1913,16 @@ implementation
       else
         { reg2 = bitcast fromllsize reg1 to tollsize }
         list.concat(taillvm.op_reg_size_reg_size(la_bitcast,reg2,fromsize,reg1,tosize));
+    end;
+
+
+  procedure thlcgllvm.a_loadmm_loc_reg(list: TAsmList; fromsize, tosize: tdef; const loc: tlocation; const reg: tregister; shuffle: pmmshuffle);
+    begin
+      if (loc.loc in [LOC_FPUREGISTER,LOC_CFPUREGISTER]) and
+         (fromsize.typ=floatdef) and (tosize.typ=floatdef) then
+        a_loadfpu_reg_reg(list,fromsize,tosize,loc.register,reg)
+      else
+        inherited;
     end;
 
 

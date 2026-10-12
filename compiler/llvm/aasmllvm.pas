@@ -85,6 +85,7 @@ interface
 {$ifdef cpuextended}
         { e.g. dst = bitcast fromsize extended to tosize }
         constructor op_reg_size_fpconst80_size(op:tllvmop;dst:tregister;fromsize:tdef;src:extended;tosize:tdef);
+        constructor op_reg_size_fpbits80_size(op:tllvmop;dst:tregister;fromsize:tdef;const src:tllvmextendedbits;tosize:tdef);
 {$endif cpuextended}
         { e.g. dst = bitcast fromsize @globalvar to tosize }
         constructor op_reg_size_sym_size(op:tllvmop;dst:tregister;fromsize:tdef;src:TAsmSymbol;tosize:tdef);
@@ -242,7 +243,7 @@ interface
       procedure derefimpl; override;
     end;
 
-    tllvmcallparaflag = (lcp_byval, lcp_sret, lcp_metadata);
+    tllvmcallparaflag = (lcp_byval, lcp_sret, lcp_metadata, lcp_inreg);
     tllvmcallparaflags = set of tllvmcallparaflag;
 
     tllvmcallparaval = record
@@ -651,7 +652,7 @@ implementation
          begin
            if typ<>top_extended80 then
              clearop(opidx);
-           eval:=_eval;
+           eval:=llvm_extended_bits(_eval);
            typ:=top_extended80;
          end;
       end;
@@ -1170,6 +1171,19 @@ implementation
         loadreg(0,dst);
         loaddef(1,fromsize);
         loadextended(2,src);
+        loaddef(3,tosize);
+      end;
+
+    constructor taillvm.op_reg_size_fpbits80_size(op: tllvmop; dst: tregister; fromsize: tdef; const src: tllvmextendedbits; tosize: tdef);
+      begin
+        create_llvm(op);
+        ops:=4;
+        loadreg(0,dst);
+        loaddef(1,fromsize);
+        allocate_oper(3);
+        clearop(2);
+        oper[2]^.typ:=top_extended80;
+        oper[2]^.eval:=src;
         loaddef(3,tosize);
       end;
 {$endif cpuextended}

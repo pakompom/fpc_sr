@@ -60,6 +60,16 @@ procedure SetupEntryInformation(constref info: TEntryInformation); external name
 procedure Exec_Tls_callback(Handle : pointer; reason : Dword; Reserved : pointer);
   stdcall; [public,alias:'_FPC_Tls_Callback'];
   begin
+{$ifdef CPULLVM}
+     { LLD can retain the executable TLS directory in DLLs too. The loader
+       invokes its process-attach callback before DLL_Entry sets IsLibrary,
+       so use the image's COFF characteristics at this early point. Running
+       executable TLS initialization here would omit the DLL threadvar list
+       and its lock. IMAGE_FILE_DLL is $2000; the COFF header follows the
+       four-byte PE signature at the DOS header's e_lfanew offset. }
+     if PWord(PByte(Handle)+PLongWord(PByte(Handle)+$3c)^+22)^ and $2000<>0 then
+       Exit;
+{$endif CPULLVM}
      if IsLibrary then
        Exit;
      case reason of

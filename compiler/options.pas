@@ -5914,7 +5914,8 @@ begin
 {$endif DISABLE_WIN64_SEH}
 
 {$ifndef DISABLE_WIN32_SEH}
-    if target_info.system=system_i386_win32 then
+    if (target_info.system=system_i386_win32) and
+       not(tf_use_psabieh in target_info.flags) then
       def_system_macro('FPC_USE_WIN32_SEH');
 {$endif not DISABLE_WIN32_SEH}
 

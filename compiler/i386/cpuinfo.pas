@@ -121,10 +121,12 @@ var
      pocall_stdcall,
      pocall_cdecl,
      pocall_cppdecl,
-     pocall_far16,
-     pocall_pascal,
+     pocall_pascal
+{$ifndef llvm}
+     ,pocall_far16,
      pocall_oldfpccall,
      pocall_mwpascal
+{$endif llvm}
    ];
 
 const
@@ -168,6 +170,11 @@ const
      'FMA',
      'AVX2',
      'AVX512F'
+   );
+
+   fputypestrllvm : array[tfputype] of string[9] = (
+     '', '', 'sse', 'sse2', 'sse3', 'ssse3', 'sse4.1', 'sse4.2',
+     'avx', 'fma', 'avx2', 'avx512f'
    );
 
    sse_singlescalar = [fpu_sse..fpu_avx512f];

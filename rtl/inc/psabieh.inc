@@ -56,6 +56,10 @@
 {$linklib unwind}
 {$endif}
 
+{$ifdef WIN32}
+{$linklib unwind}
+{$endif}
+
 {$ifdef __ARM_EABI_UNWINDER__}
 {$define PSABIEH_NO_SIZEOF_ENCODED_VALUE}
 {$endif}
@@ -164,12 +168,12 @@ procedure DoUnHandledException; forward;
 type
   FPC_Unwind_Trace_Fn = function (_para1:PFPC_Unwind_Context; _para2:pointer):FPC_Unwind_Reason_Code;cdecl;
 
-function _Unwind_Backtrace(_para1:FPC_Unwind_Trace_Fn; _para2:pointer):FPC_Unwind_Reason_Code;cdecl;{$ifdef WIN64}external{$else}weakexternal{$endif};
+function _Unwind_Backtrace(_para1:FPC_Unwind_Trace_Fn; _para2:pointer):FPC_Unwind_Reason_Code;cdecl;{$ifdef MSWINDOWS}external{$else}weakexternal{$endif};
 
 { _Unwind_GetCFA is a gcc extension that can be called from within a personality  }
 { handler to get the CFA (stack pointer before call) of current frame. }
 { }
-function _Unwind_GetCFA(_para1:PFPC_Unwind_Context):PtrUInt;cdecl;{$ifdef WIN64}external{$else}weakexternal{$endif};
+function _Unwind_GetCFA(_para1:PFPC_Unwind_Context):PtrUInt;cdecl;{$ifdef MSWINDOWS}external{$else}weakexternal{$endif};
 
 const
   DW_EH_PE_absptr       = $00;

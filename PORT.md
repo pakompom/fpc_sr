@@ -13,6 +13,26 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
 
 ## Local changes
 
+- LLVM Win32 support (`i386-win32`) using LLVM-MinGW's Clang, LLD, compiler
+  builtins and `libunwind.dll`. Register calls retain Delphi/FPC's EAX/EDX/ECX
+  arguments and callee stack cleanup; cdecl, stdcall, Pascal calls, small
+  record returns and binary80 Extended values use the native i386 ABI.
+  SSE2 is the LLVM default and is recorded in bitcode so ordinary and LTO
+  builds use the same floating-point instruction set. Older CPUs without SSE2
+  are outside the validated configuration.
+  Pascal exceptions use DWARF unwind tables and FPC's personality routine.
+  Windows hardware faults enter that unwinder through a thread-local bridge;
+  this does not make native SEH Pascal frames interchangeable with LLVM
+  exception frames. Rebuild Pascal libraries with the same exception model
+  when exceptions must cross their boundaries.
+  EXE and DLL linking supports `-Aclang-llvm -XLL`, including `-Clflto` for
+  both applications and the RTL. The personality routine is explicitly
+  retained against PE section garbage collection after LTO.
+  Keep the SDK's matching i686 `libunwind.dll` beside the executable and add
+  both the SDK's target library directory and Clang builtins directory to
+  the library search path. The compiler cycle accepts
+  `LLVM=1 CPU_TARGET=i386 OS_TARGET=win32 CROSSINSTALL=1`.
+
 - Experimental Nintendo Switch LLVM target (`aarch64-switch`) using devkitA64
   and libnx/newlib. The RTL supports UTF-8 device paths such as `sdmc:/` and
   threading through `NxThreads`; put it first in a threaded program's `uses`
@@ -66,6 +86,9 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
   Extended constants, including array and record initializers. This keeps
   ARM-hosted cross-compilers from writing Double bytes as Extended values
   (`compiler/llvm/llvmbase.pas`, `agllvm.pas`, `nllvmtcon.pas`).
+  Under `LEGACYPC24`, expression literals retain their exact binary80 bits
+  even when the build host's Extended type is Double, including exponents
+  outside the binary64 range.
 
 - `{$DELPHIORDER ON/OFF}` independently reproduces Delphi 2007 source scheduling
   rules for the game's original `{$O-}` build, while allowing FPC to optimize

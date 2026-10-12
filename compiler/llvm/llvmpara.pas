@@ -145,6 +145,8 @@ unit llvmpara;
               else if paraloc^.def=llvm_metadatatype then
                 begin
                   paraloc^.Loc:=LOC_REGISTER;
+                  { reference.offset overlaps shiftval on stack ABIs. }
+                  paraloc^.shiftval:=0;
                   // will be overwritten with a "register" whose superregister is an index in the LLVM metadata table
                   paraloc^.register:=NR_INVALID;
                 end;
@@ -163,6 +165,7 @@ unit llvmpara;
         paralocs }
       while assigned(paraloc) do
         begin
+{$ifndef i386}
           if (vo_is_funcret in parasym.varoptions) and
              { sret attribute is only valid for the first parameter; sometimes
                FPC will place other parameters first (e.g. self), and then
@@ -175,6 +178,7 @@ unit llvmpara;
  {$endif aarch64}
              then
             paraloc^.retvalloc:=true;
+{$endif i386}
           { ordinal parameters must be passed as a single paraloc }
           if (cgpara.def.typ in [orddef,enumdef,floatdef]) and
              assigned(paraloc^.next) then
@@ -264,6 +268,22 @@ unit llvmpara;
     begin
       result:=inherited;
       paraloc:=result.location;
+{$ifdef i386}
+      { Win32 returns eligible small records as integer bits in EAX/EDX.
+        Returning their LLVM structure type could instead use individual
+        fields (or ST0 for a floating-point field). }
+      if (result.def.typ=recorddef) and (paraloc^.loc=LOC_REGISTER) then
+        case result.def.size of
+          1: reducetosingleregparaloc(paraloc,u8inttype,paraloc^.register);
+          2: reducetosingleregparaloc(paraloc,u16inttype,paraloc^.register);
+          3: reducetosingleregparaloc(paraloc,u24inttype,paraloc^.register);
+          4: reducetosingleregparaloc(paraloc,u32inttype,paraloc^.register);
+          5: reducetosingleregparaloc(paraloc,u40inttype,paraloc^.register);
+          6: reducetosingleregparaloc(paraloc,u48inttype,paraloc^.register);
+          7: reducetosingleregparaloc(paraloc,u56inttype,paraloc^.register);
+          8: reducetosingleregparaloc(paraloc,u64inttype,paraloc^.register);
+        end;
+{$endif i386}
       repeat
         paraloc^.llvmvalueloc:=true;
         paraloc:=paraloc^.next;
@@ -271,7 +291,7 @@ unit llvmpara;
       paraloc:=result.location;
       if assigned(paraloc^.next) and
          (result.def.typ in [orddef,enumdef,floatdef]) and
-         (side=callerside) then
+         ((side=callerside) {$ifdef i386}or (side=calleeside){$endif}) then
         begin
           if not(paraloc^.loc in [LOC_REGISTER,LOC_FPUREGISTER,LOC_MMREGISTER]) then
             internalerror(2019011901);

@@ -252,7 +252,11 @@ begin
           in_ord_x,in_low_x,in_high_x: exit(a);
           in_pi_real: exit(0);
           else
-            if assigned(tunarynode(p).left) and is_fpu(tunarynode(p).left.resultdef) then
+            { Multi-argument intrinsics store a call-parameter list in left.
+              The list itself has no result type. }
+            if assigned(tunarynode(p).left) and
+               assigned(tunarynode(p).left.resultdef) and
+               is_fpu(tunarynode(p).left.resultdef) then
               exit(a or $1ccf)
             else exit(a or $1c43);
         end;

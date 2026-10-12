@@ -2171,7 +2171,11 @@ type
          if assigned(exportlib) and
             (target_info.system in [system_i386_win32,system_i386_wdosx]) and
             (mf_has_exports in curr.moduleflags) then
+           {$ifdef llvm}
+           cnodeutils.RegisterUsedAsmSym(current_asmdata.RefAsmSymbol(make_mangledname('EDATA',curr.localsymtable,''),AT_DATA),u8inttype,false);
+{$else llvm}
            current_asmdata.asmlists[al_procedures].concat(tai_const.createname(make_mangledname('EDATA',curr.localsymtable,''),0));
+{$endif llvm}
 
          { all labels must be defined before generating code }
          if Errorcount=0 then
@@ -2763,7 +2767,11 @@ type
         if assigned(exportlib) and
            (target_info.system in [system_i386_win32,system_i386_wdosx]) and
            (mf_has_exports in curr.moduleflags) then
-          current_asmdata.asmlists[al_procedures].concat(tai_const.createname(make_mangledname('EDATA',curr.localsymtable,''),0));
+          {$ifdef llvm}
+           cnodeutils.RegisterUsedAsmSym(current_asmdata.RefAsmSymbol(make_mangledname('EDATA',curr.localsymtable,''),AT_DATA),u8inttype,false);
+{$else llvm}
+           current_asmdata.asmlists[al_procedures].concat(tai_const.createname(make_mangledname('EDATA',curr.localsymtable,''),0));
+{$endif llvm}
 
         if (force_init_final or cnodeutils.force_final) and
            (

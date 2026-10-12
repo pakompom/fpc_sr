@@ -143,6 +143,9 @@ implementation
       ,dbgdwarf
   {$endif NoDbgDwarf}
 
+{$ifdef llvm}
+      ,llvmtarg
+{$endif llvm}
       ;
 
 end.

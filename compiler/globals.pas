@@ -566,7 +566,13 @@ Const
         cputype : cpu_Pentium2;
         optimizecputype : cpu_Pentium3;
         asmcputype : cpu_none;
+    {$ifdef llvm}
+        { Match Clang's i386 floating-point default explicitly so bitcode
+          and ordinary object builds use the same arithmetic under LTO. }
+        fputype : fpu_sse2;
+    {$else}
         fputype : fpu_x87;
+    {$endif}
   {$endif i386}
   {$ifdef m68k}
         cputype : cpu_MC68020;

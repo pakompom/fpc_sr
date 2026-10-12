@@ -45,6 +45,7 @@ unit cpunode;
          the processor specific nodes must be included
          after the generic one (FK)
        }
+{$ifndef llvm}
        nx86bas,
        nx86set,
        nx86con,
@@ -60,6 +61,9 @@ unit cpunode;
        n386flw,
 {$endif not DISABLE_WIN32_SEH}
        n386mat,
+{$else llvm}
+       llvmnode,
+{$endif llvm}
        { symtable }
        symcpu,
        aasmdef

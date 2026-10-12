@@ -1809,7 +1809,12 @@ implementation
           begin
             if importname<>'' then
              begin
-               if not(pco in [pocall_cdecl,pocall_cppdecl]) then
+               { LLVM intrinsics are IR names, not target C symbols. }
+               if not(pco in [pocall_cdecl,pocall_cppdecl])
+{$ifdef llvm}
+                  or (copy(importname,1,5)='llvm.')
+{$endif llvm}
+               then
                  result:=importname
                else
                  result:=target_info.Cprefix+importname;

@@ -148,52 +148,100 @@ const
 
     {$define FPC_SYSTEM_HAS_ABS}
     function fpc_abs_real(d : ValReal) : ValReal;compilerproc;
+{$ifdef CPULLVM}
+    assembler;
+    asm
+      fldt d
+      fabs
+{$else}
     begin
       { Function is handled internal in the compiler }
       runerror(207);
       result:=0;
+{$endif}
     end;
     {$define FPC_SYSTEM_HAS_SQR}
     function fpc_sqr_real(d : ValReal) : ValReal;compilerproc;
     begin
+{$ifdef CPULLVM}
+      Result:=d*d;
+{$else}
       { Function is handled internal in the compiler }
       runerror(207);
       result:=0;
+{$endif}
     end;
     {$define FPC_SYSTEM_HAS_SQRT}
     function fpc_sqrt_real(d : ValReal) : ValReal;compilerproc;
+{$ifdef CPULLVM}
+    assembler;
+    asm
+      fldt d
+      fsqrt
+{$else}
     begin
       { Function is handled internal in the compiler }
       runerror(207);
       result:=0;
+{$endif}
     end;
     {$define FPC_SYSTEM_HAS_ARCTAN}
     function fpc_arctan_real(d : ValReal) : ValReal;compilerproc;
+{$ifdef CPULLVM}
+    assembler;
+    asm
+      fldt d
+      fld1
+      fpatan
+{$else}
     begin
       { Function is handled internal in the compiler }
       runerror(207);
       result:=0;
+{$endif}
     end;
     {$define FPC_SYSTEM_HAS_LN}
     function fpc_ln_real(d : ValReal) : ValReal;compilerproc;
+{$ifdef CPULLVM}
+    assembler;
+    asm
+      fldln2
+      fldt d
+      fyl2x
+{$else}
     begin
       { Function is handled internal in the compiler }
       runerror(207);
       result:=0;
+{$endif}
     end;
     {$define FPC_SYSTEM_HAS_SIN}
     function fpc_sin_real(d : ValReal) : ValReal;compilerproc;
+{$ifdef CPULLVM}
+    assembler;
+    asm
+      fldt d
+      fsin
+{$else}
     begin
       { Function is handled internal in the compiler }
       runerror(207);
       result:=0;
+{$endif}
     end;
     {$define FPC_SYSTEM_HAS_COS}
     function fpc_cos_real(d : ValReal) : ValReal;compilerproc;
+{$ifdef CPULLVM}
+    assembler;
+    asm
+      fldt d
+      fcos
+{$else}
     begin
       { Function is handled internal in the compiler }
       runerror(207);
       result:=0;
+{$endif}
     end;
 
 

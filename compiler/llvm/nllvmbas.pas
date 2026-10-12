@@ -39,8 +39,9 @@ interface
          { the LLVM symbolic inline assembly operands to which the ones in the
            source code are mapped }
          fsymboldata: tfplist;
-         function getllvmasmopindexforsym(sym: tabstractnormalvarsym): longint;
-         function getllvmasmparasym(sym: tabstractnormalvarsym): tasmsymbol;
+         fsymbolprep: tasmlist;
+         function getllvmasmopindexforsym(sym: tabstractnormalvarsym; offset: pint): longint;
+         function getllvmasmparasym(sym: tabstractnormalvarsym; offset: pint): tasmsymbol;
          procedure ResolveRef(const filepos: tfileposinfo; var op: toper); override;
         public
          constructor create(p : TAsmList); override;
@@ -61,7 +62,7 @@ interface
 
     uses
       verbose,cutils,
-      cgbase,cgutils,paramgr,
+      cgbase,cgutils,paramgr,hlcgobj,
       symconst,symdef,procinfo,
       node,
       cpubase,llvmbase,aasmllvm
@@ -71,16 +72,21 @@ interface
                              TLLVMASMNODE
 *****************************************************************************}
 
-    function tllvmasmnode.getllvmasmopindexforsym(sym: tabstractnormalvarsym): longint;
+    function tllvmasmnode.getllvmasmopindexforsym(sym: tabstractnormalvarsym; offset: pint): longint;
       var
         key: record
           sym: pointer;
+          offset: pint;
         end;
         res: PHashSetItem;
         callpara: pllvmcallpara;
         paradef: tpointerdef;
+        ref: treference;
+        reg: tregister;
       begin
+        fillchar(key,sizeof(key),0);
         key.sym:=sym;
+        key.offset:=offset;
         res:=fsymbollookup.FindOrAdd(@key,sizeof(key));
         if not assigned(res^.Data) then
           begin
@@ -96,7 +102,19 @@ interface
                (sym.localloc.reference.offset<>0) or
                assigned(sym.localloc.reference.symbol) then
               internalerror(2016111001);
-            callpara^.loadreg(sym.localloc.reference.base);
+            if offset=0 then
+              reg:=sym.localloc.reference.base
+            else
+              begin
+                { A memory operand is substituted as e.g. 8(%esp), so appending
+                  +4 in the assembly string is invalid. Adjust its address in
+                  IR before handing the operand to LLVM's register allocator. }
+                ref:=sym.localloc.reference;
+                inc(ref.offset,offset);
+                reg:=hlcg.getaddressregister(fsymbolprep,paradef);
+                hlcg.a_loadaddr_ref_reg(fsymbolprep,sym.vardef,paradef,ref,reg);
+              end;
+            callpara^.loadreg(reg);
             fsymboldata.add(callpara);
             ptruint(res^.Data):=fsymboldata.count-1;
           end;
@@ -104,13 +122,13 @@ interface
       end;
 
 
-    function tllvmasmnode.getllvmasmparasym(sym: tabstractnormalvarsym): tasmsymbol;
+    function tllvmasmnode.getllvmasmparasym(sym: tabstractnormalvarsym; offset: pint): tasmsymbol;
       begin
         { these have to be transformed from `nr into into $nr; we use ` because
           we also have to double all other occurrences of '$' in the assembly
           code, and we can't differentiate between these and other '$'s in
           agllvm }
-        result:=current_asmdata.RefAsmSymbol('`'+tostr(getllvmasmopindexforsym(sym)),AT_DATA,false);
+        result:=current_asmdata.RefAsmSymbol('`'+tostr(getllvmasmopindexforsym(sym,offset)),AT_DATA,false);
       end;
 
 
@@ -158,7 +176,7 @@ interface
                       begin
                         op.typ:=top_ref;
                         new(op.ref);
-                        reference_reset_symbol(op.ref^,getllvmasmparasym(sym),sofs,
+                        reference_reset_symbol(op.ref^,getllvmasmparasym(sym,sofs),0,
                           newalignment(sym.localloc.reference.alignment,sofs),[]);
                         op.ref^.index:=indexreg;
 {$ifdef x86}
@@ -189,6 +207,7 @@ interface
         { normally already freed in pass_generate_code, but in case an error
           occurred that may not have happened }
         fsymboldata.free;
+        fsymbolprep.free;
         fsymbollookup.free;
         inherited;
       end;
@@ -210,6 +229,7 @@ interface
             { record relation between parameters and replaced local assembler
               operands }
             fsymboldata:=tfplist.create;
+            fsymbolprep:=tasmlist.create;
             fsymbollookup:=THashSet.Create(8,True,False);
           end;
         inherited;
@@ -220,6 +240,9 @@ interface
             fsymboldata:=nil;
             fsymbollookup.free;
             fsymbollookup:=nil;
+            oldasmlist.concatlist(fsymbolprep);
+            fsymbolprep.free;
+            fsymbolprep:=nil;
             oldasmlist.concat(asmai);
             current_asmdata.CurrAsmList:=oldasmlist;
           end;

@@ -114,6 +114,10 @@ interface
 
     function llvmfloatintrinsicsuffix(def: tfloatdef): TIDString;
 
+    { Map LLVM argument positions to Pascal parameter positions. }
+    function llvmparaindex(pd: tabstractprocdef; index: longint; side: tcallercallee): longint;
+    function llvmparainreg(pd: tabstractprocdef; index: longint; side: tcallercallee): boolean;
+
 
 implementation
 
@@ -271,6 +275,63 @@ implementation
     end;
 
 
+  function llvmparainreg(pd: tabstractprocdef; index: longint; side: tcallercallee): boolean;
+    begin
+      result:=false;
+{$ifdef i386}
+      if (pd.proccalloption in [pocall_register,pocall_internproc]) and
+         (index<pd.paras.count) then
+        result:=assigned(tparavarsym(pd.paras[index]).paraloc[side].location) and
+          (tparavarsym(pd.paras[index]).paraloc[side].location^.loc=LOC_REGISTER);
+{$endif i386}
+    end;
+
+
+  function llvmparaindex(pd: tabstractprocdef; index: longint; side: tcallercallee): longint;
+{$ifdef i386}
+    var
+      i,rank,j: longint;
+      key,otherkey: aint;
+      loc: pcgparalocation;
+{$endif i386}
+    begin
+      result:=index;
+{$ifdef i386}
+      if (index>=pd.paras.count) or
+         not(pd.proccalloption in [pocall_register,pocall_internproc,pocall_pascal]) then
+        exit;
+      { LLVM's x86 stdcall convention assigns inreg operands to EAX, EDX,
+        ECX, then stack operands from low to high addresses. Use the native
+        parameter manager's stack layout, including Pascal's reversed stack
+        order and hidden parameters, for both definitions and calls. }
+      for i:=0 to pd.paras.count-1 do
+        begin
+          loc:=tparavarsym(pd.paras[i]).paraloc[side].location;
+          if not assigned(loc) or (loc^.loc<>LOC_REFERENCE) then
+            key:=-pd.paras.count+i
+          else
+            key:=loc^.reference.offset;
+          rank:=0;
+          for j:=0 to pd.paras.count-1 do
+            begin
+              loc:=tparavarsym(pd.paras[j]).paraloc[side].location;
+              if not assigned(loc) or (loc^.loc<>LOC_REFERENCE) then
+                otherkey:=-pd.paras.count+j
+              else
+                otherkey:=loc^.reference.offset;
+              if (otherkey<key) or ((otherkey=key) and (j<i)) then
+                inc(rank);
+            end;
+          if rank=index then
+            begin
+              result:=i;
+              exit;
+            end;
+        end;
+{$endif i386}
+    end;
+
+
   function llvmmangledname(const s: TSymStr): TSymStr;
     var
       namestart: longint;
@@ -387,7 +448,15 @@ implementation
           nor llvm-gcc seem to do so either) }
       result:=
         ((paraloc^.loc=LOC_REFERENCE) and
-         llvmaggregatetype(paraloc^.def)) or
+         (llvmaggregatetype(paraloc^.def)
+{$ifdef i386}
+          { Comp/Currency stack arguments contain integer bits, while their
+            value in an FPC floating register is extended precision. Keep an
+            addressable byval operand so loading it performs that conversion. }
+          or ((paraloc^.def.typ=floatdef) and
+              (tfloatdef(paraloc^.def).floattype in [s64comp,s64currency]))
+{$endif i386}
+         )) or
         ((paraloc^.loc in [LOC_REGISTER,LOC_CREGISTER]) and
          (paraloc^.shiftval<>0))
     end;
@@ -872,7 +941,14 @@ implementation
             to clear (reason: it means that the paraloc is larger than the
             original parameter) }
           if withattributes then
-            encodedstr:=encodedstr+llvmvalueextension2str[signext];
+            begin
+              encodedstr:=encodedstr+llvmvalueextension2str[signext];
+{$ifdef i386}
+              if (proccalloption in [pocall_register,pocall_internproc]) and
+                 (paraloc^.loc=LOC_REGISTER) then
+                encodedstr:=encodedstr+' inreg';
+{$endif i386}
+            end;
           { sret: hidden pointer for structured function result }
           if vo_is_funcret in hp.varoptions then
             begin
@@ -890,6 +966,7 @@ implementation
 {$endif aarch64}
               if withattributes then
                 begin
+{$ifndef i386}
                   if first
 {$ifdef aarch64}
                      and not is_managed_type(hp.vardef)
@@ -897,6 +974,7 @@ implementation
                     then
                       encodedstr:=encodedstr+llvmparatypeattr(' sret',hp.vardef,false)+' noalias nocapture'
                     else
+{$endif i386}
                       encodedstr:=encodedstr+' noalias nocapture';
                 end;
             end
@@ -1037,7 +1115,7 @@ implementation
         first:=true;
         for paranr:=0 to def.paras.count-1 do
           begin
-            hp:=tparavarsym(def.paras[paranr]);
+            hp:=tparavarsym(def.paras[llvmparaindex(def,paranr,useside)]);
             llvmaddencodedparaloctype(hp,def.proccalloption,pddecltype in [lpd_def],not(pddecltype in [lpd_procvar,lpd_alias]),first,encodedstr);
           end;
         if po_varargs in def.procoptions then
@@ -1161,6 +1239,7 @@ implementation
               int64). Solve this by changing the type to s80real in the
               returndef/parameter declaration. }
             if (usedef.typ=floatdef) and
+               cgpara.location^.llvmvalueloc and
                (tfloatdef(usedef).floattype in [s64comp,s64currency]) then
               usedef:=s80floattype;
             result:=usedef;

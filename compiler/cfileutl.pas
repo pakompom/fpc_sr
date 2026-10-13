@@ -1232,10 +1232,11 @@ end;
      var
        b : TCmdStr;
      begin
-       { change extension only on platforms that use an exe extension, otherwise on OpenBSD
-         'ld.bfd' gets converted to 'ld' }
-       if source_info.exeext<>'' then
-         b:=ChangeFileExt(bin,source_info.exeext)
+       { Tool names can contain dots, e.g. ld.lld and ld.bfd. Append the host
+         suffix instead of replacing that part of the executable name. }
+       if (source_info.exeext<>'') and
+          (lower(ExtractFileExt(bin))<>source_info.exeext) then
+         b:=bin+source_info.exeext
        else
          b:=bin;
        FindExe:=FindFileInExeLocations(b,allowcache,foundfile);

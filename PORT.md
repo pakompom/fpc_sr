@@ -33,6 +33,15 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
   the library search path. The compiler cycle accepts
   `LLVM=1 CPU_TARGET=i386 OS_TARGET=win32 CROSSINSTALL=1`.
 
+- Native Windows hosts can build Win32 and Win64 LLVM programs with LLVM-MinGW.
+  Executable lookup preserves dotted tool names such as `ld.lld.exe`, and the
+  MinGW LLD response files use forward slashes for Windows paths. PE
+  postprocessing skips sections without file padding, preserving exception
+  tables when LLD merges BSS into `.data`, and reports successful writes
+  correctly. The Win64 LLVM RTL links the C runtime and Clang builtins for
+  compiler-generated memory and arithmetic helpers. LLD suppresses COFF and
+  debug-directory timestamps so self-hosted compiler stages compare unchanged.
+
 - Experimental Nintendo Switch LLVM target (`aarch64-switch`) using devkitA64
   and libnx/newlib. The RTL supports UTF-8 device paths such as `sdmc:/` and
   threading through `NxThreads`; put it first in a threaded program's `uses`

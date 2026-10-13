@@ -1154,6 +1154,9 @@ implementation
 {$else}
             targetopts:='-m i386pep';
 {$endif}
+            { Clear timestamps in both the COFF header and debug directory so
+              successive bootstrap stages compare byte for byte. }
+            targetopts:=targetopts+' --no-insert-timestamp';
             Info.ExeCmd[1]:='ld.lld '+targetopts+' $OPT $GCSECTIONS $MAP $STRIP $APPTYPE $ENTRY $IMAGEBASE -o $EXE @$RES';
             Info.DllCmd[1]:='ld.lld '+targetopts+' $OPT $GCSECTIONS $MAP $STRIP --dll $APPTYPE $ENTRY $IMAGEBASE -o $EXE @$RES';
             exit;
@@ -1193,6 +1196,16 @@ implementation
         hp: TCmdStrListItem;
         s,s2: TCmdStr;
         i: integer;
+
+      function ResponsePath(s: TCmdStr): TCmdStr;
+        begin
+          { MinGW LLD uses GNU response-file quoting even on a Windows host.
+            Backslashes would escape the following character (or newline). }
+          if source_info.dirsep='\' then
+            s:=bstoslash(s);
+          result:=MaybeQuoted(s);
+        end;
+
       begin
         { LLD's MinGW driver takes an argument response file, not a GNU ld
           SECTIONS script. Its default PE layout supplies unwind/import tables. }
@@ -1200,19 +1213,19 @@ implementation
         hp:=TCmdStrListItem(current_module.locallibrarysearchpath.First);
         while assigned(hp) do
           begin
-            linkres.Add('-L'+MaybeQuoted(hp.Str));
+            linkres.Add('-L'+ResponsePath(hp.Str));
             hp:=TCmdStrListItem(hp.Next);
           end;
         hp:=TCmdStrListItem(LibrarySearchPath.First);
         while assigned(hp) do
           begin
-            linkres.Add('-L'+MaybeQuoted(hp.Str));
+            linkres.Add('-L'+ResponsePath(hp.Str));
             hp:=TCmdStrListItem(hp.Next);
           end;
         while not ObjectFiles.Empty do
-          linkres.AddFileName(MaybeQuoted(ObjectFiles.GetFirst));
+          linkres.AddFileName(ResponsePath(ObjectFiles.GetFirst));
         while not StaticLibFiles.Empty do
-          linkres.AddFileName(MaybeQuoted(StaticLibFiles.GetFirst));
+          linkres.AddFileName(ResponsePath(StaticLibFiles.GetFirst));
         while not SharedLibFiles.Empty do
           begin
             s:=SharedLibFiles.GetFirst;
@@ -1221,7 +1234,7 @@ implementation
               in the DLL instead of mixing CRT startup into a Pascal EXE. }
             if FindLibraryFile(s,target_info.staticClibprefix,'.dll.a',s2) or
                FindLibraryFile(s,target_info.staticClibprefix,target_info.staticClibext,s2) then
-              linkres.AddFileName(MaybeQuoted(s2))
+              linkres.AddFileName(ResponsePath(s2))
             else
               begin
                 i:=Pos(target_info.sharedlibext,s);
@@ -1865,8 +1878,14 @@ implementation
         { zero section alignments }
         while assigned(secroot) do
          begin
-           seek(f,secroot^.fillpos);
-           blockwrite(f,zerobuf^,secroot^.fillsize);
+           { LLD merges BSS into .data, whose virtual size can exceed its
+             file size. A negative padding count would overwrite later
+             sections, including the LLVM exception tables. }
+           if secroot^.fillsize>0 then
+            begin
+              seek(f,secroot^.fillpos);
+              blockwrite(f,zerobuf^,secroot^.fillsize);
+            end;
            hsecroot:=secroot;
            secroot:=secroot^.next;
            dispose(hsecroot);
@@ -1874,7 +1893,7 @@ implementation
         freemem(zerobuf,maxfillsize);
         close(f);
         {$pop}
-        if ioresult<>0 then
+        if ioresult=0 then
           postprocessexecutable:=true;
       end;
 

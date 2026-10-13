@@ -30,6 +30,13 @@ interface
 {$define FPC_SYSTEM_HAS_SYSDLH}
 {$define FPC_HAS_SETCTRLBREAKHANDLER}
 
+{$if defined(CPULLVM) and defined(CPUX86_64)}
+{ LLVM can lower memory operations and arithmetic intrinsics to C runtime
+  calls even in Pascal-only programs and the bootstrap's fpcmemdll. }
+{$linklib msvcrt}
+{$linklib clang_rt.builtins-x86_64}
+{$endif}
+
 {$if defined(FPC_USE_WIN64_SEH) or defined(CPUAARCH64)}
 {$define SYSTEM_USE_WIN_SEH}
 {$endif}

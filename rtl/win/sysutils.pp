@@ -1934,6 +1934,18 @@ procedure InitWin32Widestrings;
 
 { Platform-specific exception support }
 
+{$if defined(CPULLVM) and defined(CPUX86_64) and not defined(FPC_USE_WIN64_SEH)}
+procedure Win64RunErrorToExcept(error: longint; addr: CodePointer; frame: pointer);
+var
+  obj: TObject;
+begin
+  obj:=Win64NativeErrorObject(error,addr,frame);
+  if obj<>nil then
+    raise obj at addr,frame;
+  RunErrorToExcept(error,addr,frame);
+end;
+{$endif}
+
 function WinExceptionObject(code: Longint; const rec: TExceptionRecord): Exception;
 var
   entry: PExceptMapEntry;
@@ -1963,6 +1975,10 @@ end;
 Initialization
   InitWin32Widestrings;
   InitExceptions;       { Initialize exceptions. OS independent }
+{$if defined(CPULLVM) and defined(CPUX86_64) and not defined(FPC_USE_WIN64_SEH)}
+  Win64DefaultErrorProc:=@Win64RunErrorToExcept;
+  ErrorProc:=Win64DefaultErrorProc;
+{$endif}
 {$ifdef mswindows}      { Keeps exe size down for systems that do not use SEH }
   ExceptObjProc:=@WinExceptionObject;
   ExceptClsProc:=@WinExceptionClass;

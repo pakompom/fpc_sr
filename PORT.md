@@ -44,9 +44,14 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
 
 - The Win64 vectored exception handler passes unrecognized native exception
   codes, including MSVC C++ throws, to Windows and the originating library's
-  handlers. Known hardware faults, in-page I/O errors and Windows control-C status
-  retain their Pascal translations. The LLVM bridge copies the native exception
-  record into `EExternal`, preserving the fault address and parameters.
+  handlers. Known hardware faults and Windows control-C status retain their
+  Pascal translations; in-page I/O errors now map to `EAccessViolation`.
+  See [Win64 LLVM exception compatibility](#win64-llvm-exception-compatibility)
+  for why this fix is needed and how escaping foreign exceptions differ from
+  standard FPC. The LLVM bridge copies the native exception
+  record into `EExternal`, preserving the fault address and parameters. Custom
+  `ErrorProc` hooks still run; delegating to the saved SysUtils handler retains
+  the original fault details, including across nested faults and threads.
 
 - Experimental Nintendo Switch LLVM target (`aarch64-switch`) using devkitA64
   and libnx/newlib. The RTL supports UTF-8 device paths such as `sdmc:/` and
@@ -169,6 +174,50 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
 - The Darwin linker also uses `-platform_version` for macOS SDKs 10.15 and newer
   and for LLD, recording the SDK version independently of the deployment target
   (`compiler/systems/t_darwin.pas`). Older Apple toolchains retain legacy flags.
+
+## Win64 LLVM exception compatibility
+
+Standard FPC's native Win64 backend uses Windows structured exception handling
+(SEH) at Pascal stack frames. A called C++ library can throw and catch an
+exception internally before the search reaches its Pascal caller. If an
+otherwise unhandled Windows exception with an unrecognized code reaches a
+matching Pascal handler, SysUtils translates it to `EExternalException` and `finally`
+blocks run during unwinding. This behavior is correct for these cases; see
+the [native SEH handler](rtl/win64/seh64.inc).
+
+The Win64 LLVM port selected a different implementation in commit
+`d7a1add5dd` (Win64 LLVM support): FPC's Itanium-style exception machinery,
+adapted to Windows through LLVM-MinGW's `libunwind`. This matches the port's
+LLVM-generated exception code. The recent logging and fault-record changes
+did not switch exception models. See the [target flags](compiler/systems/i_win.pas)
+and [libunwind adapter](rtl/inc/psabieh.inc).
+
+That path reused FPC's older vectored fallback handler. Its catch-all converted
+unrecognized error-severity Windows codes into runtime error 217 (`EControlC`).
+Vectored handlers run before stack-based handlers, so this could intercept even
+an MSVC C++ exception that a native library would catch itself. This premature
+translation was incorrect and caused the game's native-library startup failure.
+The pass-through fix removes that interception.
+
+There is still a compatibility gap: libunwind's
+[`_GCC_specific_handler`](https://github.com/llvm/llvm-project/blob/main/libunwind/src/Unwind-seh.cpp)
+passes foreign Windows exceptions through without invoking Pascal handlers or
+cleanup. For example, `Windows.RaiseException($E0000042, 0, 0, nil)` inside Pascal
+`try/finally/except` is caught as `EExternalException` by native Win64 FPC with
+SysUtils. In this LLVM port it bypasses those blocks and terminates the process
+unless another native handler handles it. Ordinary Pascal exceptions and the
+bridge's explicitly recognized hardware faults still run Pascal cleanup and
+can be caught.
+
+Passing unknown codes through fixes a real bug, but does not make the LLVM
+port fully equivalent to native FPC. Matching native FPC requires support at
+Pascal stack frames that preserves inner native handlers; restoring the global
+vectored catch-all would reintroduce the startup bug. Recognized hardware faults
+are still intercepted by the bridge even in native libraries, so native handlers
+for those faults can still be preempted; that existing limitation is separate
+from the unknown-code fix.
+
+## Repository integration
 
 [SpaceRangersHD_FPC](https://github.com/pakompom/SpaceRangersHD_FPC) pins this
 repository at `vendor/fpc`. Its `tools/compiler.py` bootstraps the compiler and

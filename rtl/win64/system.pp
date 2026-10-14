@@ -59,6 +59,13 @@ interface
 var
   MainInstance : qword;
 
+{$if defined(CPULLVM) and not defined(SYSTEM_USE_WIN_SEH)}
+var
+  Win64DefaultErrorProc: TErrorProc;
+{ Used by SysUtils after an ErrorProc hook delegates the original fault. }
+function Win64NativeErrorObject(error: longint; addr: CodePointer; frame: pointer): TObject;
+{$endif}
+
 implementation
 
 var
@@ -178,23 +185,72 @@ type
     ExceptionRecord: TExceptionRecord;
     ResetFPU: Boolean;
   end;
+  PLLVMErrorContext = ^TLLVMErrorContext;
+  TLLVMErrorContext = record
+    Native: PLLVMNativeError;
+    Error: longint;
+    Addr: CodePointer;
+    Frame: pointer;
+  end;
+
+threadvar
+  LLVMErrorContext: PLLVMErrorContext;
+
+function Win64NativeErrorObject(error: longint; addr: CodePointer; frame: pointer): TObject;
+var
+  context: PLLVMErrorContext;
+  native: PLLVMNativeError;
+begin
+  Win64NativeErrorObject:=nil;
+  context:=LLVMErrorContext;
+  if (context=nil) or (context^.Error<>error) or
+     (context^.Addr<>addr) or (context^.Frame<>frame) then
+    exit;
+  native:=context^.Native;
+  { Consume before calling user code or allocating the exception. A runtime
+    error raised inside the factory must not inherit the original OS record. }
+  context^.Native:=nil;
+  if (native<>nil) and Assigned(ExceptObjProc) then
+    Win64NativeErrorObject:=TObject(TExceptObjProc(ExceptObjProc)(error,native^.ExceptionRecord));
+end;
 
 procedure LLVMHandleNativeError(error: longint; addr, frame: pointer;
   native: PLLVMNativeError); [public,alias: 'FPC_WIN64_HANDLE_NATIVE_ERROR'];
 var
+  context: TLLVMErrorContext;
+  previous: PLLVMErrorContext;
   obj: TObject;
 begin
   if native^.ResetFPU then
     SysResetFPU;
-  { SysUtils copies the record into EExternal before the fault stack is
-    unwound. The ordinary runtime-error hook cannot carry this OS record. }
-  if Assigned(ExceptObjProc) then
+  { The unhooked SysUtils path needs no pending context or cleanup unwind.
+    An outer hook's context must still be isolated when it changes ErrorProc. }
+  if Assigned(Win64DefaultErrorProc) and
+     (CodePointer(ErrorProc)=CodePointer(Win64DefaultErrorProc)) and
+     (LLVMErrorContext=nil) then
     begin
-      obj:=TObject(TExceptObjProc(ExceptObjProc)(error,native^.ExceptionRecord));
-      if obj<>nil then
-        raise obj at addr,frame;
+      if Assigned(ExceptObjProc) then
+        begin
+          obj:=TObject(TExceptObjProc(ExceptObjProc)(error,native^.ExceptionRecord));
+          if obj<>nil then
+            raise obj at addr,frame;
+        end;
+      HandleErrorAddrFrame(error,addr,frame);
+      exit;
     end;
-  HandleErrorAddrFrame(error,addr,frame);
+  context.Native:=native;
+  context.Error:=error;
+  context.Addr:=addr;
+  context.Frame:=frame;
+  previous:=LLVMErrorContext;
+  LLVMErrorContext:=@context;
+  try
+    { Preserve ErrorProc, including hooks that replace, delegate or decline
+      translation. SysUtils copies the record before this stack is unwound. }
+    HandleErrorAddrFrame(error,addr,frame);
+  finally
+    LLVMErrorContext:=previous;
+  end;
 end;
 
 { The exception context supplies a machine frame. Describe it to SEH so
@@ -261,6 +317,7 @@ function syswin64_x86_64_exception_handler(excep : PExceptionPointers) : Longint
 {$ifdef CPULLVM}
     frame: PLLVMErrorFrame;
     native: PLLVMNativeError;
+    native_record: TExceptionRecord;
 {$endif}
   begin
     res:=EXCEPTION_CONTINUE_SEARCH;
@@ -341,10 +398,16 @@ function syswin64_x86_64_exception_handler(excep : PExceptionPointers) : Longint
         if (err <> 0) and (exceptLevel < MaxExceptionLevel) then
           begin
 {$ifdef CPULLVM}
+            { The OS record may overlap the space below the faulting RSP.
+              Snapshot it before clearing it or constructing the bridge. }
+            native_record:=excep^.ExceptionRecord^;
+{$endif}
+            excep^.ExceptionRecord^.ExceptionCode := 0;
+{$ifdef CPULLVM}
             { Keep the OS record on the faulting stack until SysUtils copies it. }
             native:=PLLVMNativeError((excep^.ContextRecord^.Rsp and not QWord(15))-
               ((SizeOf(TLLVMNativeError)+15) and not SizeUInt(15)));
-            native^.ExceptionRecord:=excep^.ExceptionRecord^;
+            native^.ExceptionRecord:=native_record;
             native^.ResetFPU:=must_reset_fpu;
             frame:=PLLVMErrorFrame(PtrUInt(native)-SizeOf(TLLVMErrorFrame));
             frame^.IP:=excep^.ContextRecord^.Rip+1;
@@ -366,7 +429,6 @@ function syswin64_x86_64_exception_handler(excep : PExceptionPointers) : Longint
 
             excep^.ContextRecord^.Rip := Int64(@JumpToHandleErrorFrame);
 {$endif}
-            excep^.ExceptionRecord^.ExceptionCode := 0;
 
             res := EXCEPTION_CONTINUE_EXECUTION;
 {$ifdef SYSTEMEXCEPTIONDEBUG}

@@ -98,6 +98,7 @@ units
 /tests/output
 /tests/output*
 /tests/switch/__pycache__/
+/tests/llvm/__pycache__/
 !/tests/test/units
 /tests/tstunits/tmp/
 /tests/tstunits/*-*/

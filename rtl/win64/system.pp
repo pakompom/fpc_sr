@@ -173,26 +173,39 @@ type
   TLLVMErrorFrame = packed record
     IP, CS, Flags, SP, SS: QWord;
   end;
+  PLLVMNativeError = ^TLLVMNativeError;
+  TLLVMNativeError = record
+    ExceptionRecord: TExceptionRecord;
+    ResetFPU: Boolean;
+  end;
+
+procedure LLVMHandleNativeError(error: longint; addr, frame: pointer;
+  native: PLLVMNativeError); [public,alias: 'FPC_WIN64_HANDLE_NATIVE_ERROR'];
+var
+  obj: TObject;
+begin
+  if native^.ResetFPU then
+    SysResetFPU;
+  { SysUtils copies the record into EExternal before the fault stack is
+    unwound. The ordinary runtime-error hook cannot carry this OS record. }
+  if Assigned(ExceptObjProc) then
+    begin
+      obj:=TObject(TExceptObjProc(ExceptObjProc)(error,native^.ExceptionRecord));
+      if obj<>nil then
+        raise obj at addr,frame;
+    end;
+  HandleErrorAddrFrame(error,addr,frame);
+end;
 
 { The exception context supplies a machine frame. Describe it to SEH so
   unwinding restores the faulting stack even when LLVM omitted RBP. }
 procedure LLVMHandleErrorFrame; assembler; nostackframe;
 asm
   .seh_pushframe
-  subq $56,%rsp
-  .seh_stackalloc 56
+  subq $40,%rsp
+  .seh_stackalloc 40
   .seh_endprologue
-  movq %rcx,32(%rsp)
-  movq %rdx,40(%rsp)
-  movq %r8,48(%rsp)
-  testl %r9d,%r9d
-  jz .Lready
-  call SysResetFPU
-.Lready:
-  movq 32(%rsp),%rcx
-  movq 40(%rsp),%rdx
-  movq 48(%rsp),%r8
-  call HandleErrorAddrFrame
+  call LLVMHandleNativeError
   int3
 end;
 {$else}
@@ -247,6 +260,7 @@ function syswin64_x86_64_exception_handler(excep : PExceptionPointers) : Longint
     must_reset_fpu: boolean;
 {$ifdef CPULLVM}
     frame: PLLVMErrorFrame;
+    native: PLLVMNativeError;
 {$endif}
   begin
     res:=EXCEPTION_CONTINUE_SEARCH;
@@ -293,6 +307,11 @@ function syswin64_x86_64_exception_handler(excep : PExceptionPointers) : Longint
             end;
           STATUS_ILLEGAL_INSTRUCTION:
             err := 216;
+          STATUS_IN_PAGE_ERROR:
+            begin
+              err := 216;
+              must_reset_fpu := false;
+            end;
           STATUS_ACCESS_VIOLATION:
             { Athlon prefetch bug? }
             if is_prefetch(pointer(excep^.ContextRecord^.rip)) then
@@ -312,22 +331,22 @@ function syswin64_x86_64_exception_handler(excep : PExceptionPointers) : Longint
               must_reset_fpu := false;
             end;
           else
-            begin
-              if ((excep^.ExceptionRecord^.ExceptionCode and SEVERITY_ERROR) = SEVERITY_ERROR) then
-                err := 217
-              else
-                { pass through exceptions which aren't an error. The problem is that vectored handlers
-                  always are called before structured ones so we see also internal exceptions of libraries.
-                  I wonder if there is a better solution (FK)
-                }
-                res:=EXCEPTION_CONTINUE_SEARCH;
-            end;
+            { Vectored handlers run before a library's structured handlers.
+              Leave foreign exceptions (including MSVC C++ exceptions) alone,
+              even when their severity is ERROR. Translating them to error 217
+              bypasses their native handlers and incorrectly raises EControlC. }
+            res:=EXCEPTION_CONTINUE_SEARCH;
         end;
 
         if (err <> 0) and (exceptLevel < MaxExceptionLevel) then
           begin
 {$ifdef CPULLVM}
-            frame:=PLLVMErrorFrame((excep^.ContextRecord^.Rsp and not QWord(15))-SizeOf(TLLVMErrorFrame));
+            { Keep the OS record on the faulting stack until SysUtils copies it. }
+            native:=PLLVMNativeError((excep^.ContextRecord^.Rsp and not QWord(15))-
+              ((SizeOf(TLLVMNativeError)+15) and not SizeUInt(15)));
+            native^.ExceptionRecord:=excep^.ExceptionRecord^;
+            native^.ResetFPU:=must_reset_fpu;
+            frame:=PLLVMErrorFrame(PtrUInt(native)-SizeOf(TLLVMErrorFrame));
             frame^.IP:=excep^.ContextRecord^.Rip+1;
             frame^.CS:=excep^.ContextRecord^.SegCs;
             frame^.Flags:=excep^.ContextRecord^.EFlags;
@@ -336,7 +355,7 @@ function syswin64_x86_64_exception_handler(excep : PExceptionPointers) : Longint
             excep^.ContextRecord^.Rcx:=err;
             excep^.ContextRecord^.Rdx:=excep^.ContextRecord^.Rip;
             excep^.ContextRecord^.R8:=excep^.ContextRecord^.Rbp;
-            excep^.ContextRecord^.R9:=Ord(must_reset_fpu);
+            excep^.ContextRecord^.R9:=QWord(native);
             excep^.ContextRecord^.Rsp:=QWord(frame);
             excep^.ContextRecord^.Rip:=QWord(@LLVMHandleErrorFrame);
 {$else}

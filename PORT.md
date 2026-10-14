@@ -42,6 +42,12 @@ compiler, runtime library, and the `rtl-objpas`, `fcl-base`, `fcl-process`, and
   compiler-generated memory and arithmetic helpers. LLD suppresses COFF and
   debug-directory timestamps so self-hosted compiler stages compare unchanged.
 
+- The Win64 vectored exception handler passes unrecognized native exception
+  codes, including MSVC C++ throws, to Windows and the originating library's
+  handlers. Known hardware faults, in-page I/O errors and Windows control-C status
+  retain their Pascal translations. The LLVM bridge copies the native exception
+  record into `EExternal`, preserving the fault address and parameters.
+
 - Experimental Nintendo Switch LLVM target (`aarch64-switch`) using devkitA64
   and libnx/newlib. The RTL supports UTF-8 device paths such as `sdmc:/` and
   threading through `NxThreads`; put it first in a threaded program's `uses`
